@@ -1,0 +1,2861 @@
+'use client';
+
+import {
+  ArrowLeft,
+  CalendarPlus,
+  Copy,
+  Crown,
+  KeyRound,
+  MoreVertical,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  UserPlus,
+  UsersRound,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import type { FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import {
+  createPreliminaryTaskAction,
+  createRoomAction,
+  deletePreliminaryTaskAction,
+  deleteRoomAction,
+  deleteScheduleAction,
+  joinRoomAction,
+  kickMemberAction,
+  regenerateInviteCodeAction,
+  saveScheduleAction,
+  transferOwnershipAction,
+  updateMemberRoleAction,
+  updateCurrentPasswordAction,
+  updatePreliminaryTaskAction,
+  updatePreliminaryTaskCompletedAction,
+  updateProfileAction,
+  updateScheduleCheckedAction,
+  updateScheduleStatusAction,
+  updateUserPreferencesAction,
+  validateInviteAction,
+} from '@/app/actions/schedule-actions';
+import type { ScheduleWorkspaceInitialData } from '@/data/schedule-supabase';
+import type { PreliminaryTask, Profile, RoomMember, Schedule, SchedulingRoom, UserPreference } from '@/domain/entities';
+import { AppFrame } from '@/components/app/AppFrame';
+import { AppHeader } from '@/components/app/AppHeader';
+import { PreliminaryTaskCard } from '@/components/app/PreliminaryTaskCard';
+import { RoomCard } from '@/components/app/RoomCard';
+import { ScheduleCalendar } from '@/components/app/ScheduleCalendar';
+import { TodayTaskCard } from '@/components/app/TodayTaskCard';
+import { ParticipantAvatar, ParticipantAvatarGroup } from '@/components/common/ParticipantAvatar';
+import { RoleBadge } from '@/components/common/RoleBadge';
+import { StatusBadge } from '@/components/common/StatusBadge';
+import { EmptyState } from '@/components/common/StateBlocks';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Field, TextareaField } from '@/components/ui/field';
+import { Sheet } from '@/components/ui/sheet';
+import { currentUser, preliminaryTasks as initialTasks, rooms as initialRooms, schedules as initialSchedules } from '@/lib/mock-data';
+import { accountStatusLabels, roomRoleLabels } from '@/lib/korean-labels';
+import { cn, formatCurrency } from '@/lib/utils';
+
+type WorkspacePage = 'dashboard' | 'todayTasks' | 'preliminaryTasks' | 'rooms' | 'room' | 'mypage' | 'admin';
+type SheetType =
+  | 'createRoom'
+  | 'createComplete'
+  | 'joinRoom'
+  | 'scheduleForm'
+  | 'scheduleDetail'
+  | 'roomMenu'
+  | 'participantManagement'
+  | 'transferOwnership'
+  | 'roomScheduleManagement'
+  | 'preliminaryTask'
+  | 'adminAddUser'
+  | 'inviteInfo'
+  | 'roomInfo'
+  | null;
+
+interface ScheduleWorkspaceProps {
+  page: WorkspacePage;
+  roomId?: string;
+  profile?: Profile;
+  initialData?: ScheduleWorkspaceInitialData;
+}
+
+type ScheduleFormValues = {
+  title: string;
+  participantMemberIds: string[];
+  date: string;
+  startTime: string;
+  endTime: string;
+  address: string;
+  customerPhone: string;
+  estimatedPrice: string;
+  additionalInfo: string;
+};
+
+type CreateRoomFormValues = {
+  name: string;
+  description: string;
+  nickname: string;
+  color: string;
+  sharedScheduleColor: string;
+  defaultView: 'week' | 'month';
+  businessStartTime: string;
+  businessEndTime: string;
+};
+
+type PreliminaryTaskFormValues = {
+  title: string;
+  memo: string;
+  priority: PreliminaryTask['priority'];
+  roomId: string;
+  dueDate: string;
+};
+
+type JoinRoomFormValues = {
+  invite: string;
+  nickname: string;
+};
+
+type ProfileFormValues = {
+  name: string;
+  phone: string;
+};
+
+type PasswordFormValues = {
+  password: string;
+  passwordConfirm: string;
+};
+
+type UserPreferenceFormValues = {
+  defaultCalendarView: UserPreference['defaultCalendarView'];
+  filterOpacity: number;
+  pushEnabled: boolean;
+};
+
+type InvitePreview = {
+  roomId: string;
+  name: string;
+  description: string | null;
+  ownerNickname: string;
+  memberCount: number;
+};
+
+type AdminUserFormValues = {
+  loginId: string;
+  email: string;
+  password: string;
+  passwordConfirm: string;
+  name: string;
+  phone: string;
+  isServiceAdmin: boolean;
+};
+
+const roomStorageKey = (userId: string) => `shared-schedule:rooms:${userId}`;
+
+function defaultPreference(userId: string): UserPreference {
+  return {
+    userId,
+    pushEnabled: false,
+    defaultCalendarView: 'week',
+    filterOpacity: 25,
+  };
+}
+
+function mergeRooms(savedRooms: SchedulingRoom[], baseRooms: SchedulingRoom[]) {
+  const merged = new Map<string, SchedulingRoom>();
+
+  for (const room of baseRooms) {
+    merged.set(room.id, room);
+  }
+
+  for (const room of savedRooms) {
+    merged.set(room.id, room);
+  }
+
+  return Array.from(merged.values());
+}
+
+function roleCanManageSchedules(member?: RoomMember) {
+  return member?.role === 'owner' || member?.role === 'manager';
+}
+
+function getMyMember(room: SchedulingRoom, profile: Profile) {
+  return room.members.find((member) => member.userId === profile.id);
+}
+
+function getScheduleParticipants(room: SchedulingRoom, schedule: Schedule) {
+  return room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
+}
+
+function buildMyCalendarRoom(profile: Profile, rooms: SchedulingRoom[]): SchedulingRoom {
+  const myMembers = rooms.flatMap((room) => {
+    const member = getMyMember(room, profile);
+    return member ? [member] : [];
+  });
+
+  return {
+    id: 'my-calendar',
+    name: '내 일정',
+    description: '참여 중인 모든 방의 내 일정입니다.',
+    color: '#3558e6',
+    sharedScheduleColor: '#8b6ff4',
+    ownerUserId: profile.id,
+    status: 'active',
+    defaultView: 'week',
+    businessStartTime: '00:00',
+    businessEndTime: '24:00',
+    inviteCode: '',
+    members: myMembers.length > 0
+      ? myMembers
+      : [
+          {
+            id: `my-calendar-${profile.id}`,
+            roomId: 'my-calendar',
+            userId: profile.id,
+            nickname: profile.name,
+            role: 'member',
+            color: '#3558e6',
+            joinedAt: new Date().toISOString(),
+            lastActiveAt: null,
+            email: profile.email,
+            name: profile.name,
+          },
+        ],
+    todayScheduleCount: 0,
+    nextSchedule: null,
+    recentActivity: '',
+  };
+}
+
+export function ScheduleWorkspace({ page, roomId, profile = currentUser, initialData }: ScheduleWorkspaceProps) {
+  const router = useRouter();
+  const [workspaceProfile, setWorkspaceProfile] = useState(profile);
+  const [rooms, setRooms] = useState(initialData?.rooms ?? initialRooms);
+  const [schedules, setSchedules] = useState(initialData?.schedules ?? initialSchedules);
+  const [tasks, setTasks] = useState(initialData?.tasks ?? initialTasks);
+  const [preference, setPreference] = useState<UserPreference>(initialData?.preference ?? defaultPreference(profile.id));
+  const [adminUsers, setAdminUsers] = useState<Profile[]>(
+    initialData?.adminUsers?.length
+      ? initialData.adminUsers
+      : [
+          profile,
+          { ...profile, id: 'user-jihyun', email: 'jihyun@example.com', name: '이지현', isServiceAdmin: false },
+        ],
+  );
+  const [activeSheet, setActiveSheet] = useState<SheetType>(null);
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [selectedTask, setSelectedTask] = useState<PreliminaryTask | null>(null);
+  const [deleteScheduleOpen, setDeleteScheduleOpen] = useState(false);
+  const [deleteRoomOpen, setDeleteRoomOpen] = useState(false);
+  const [transferConfirmed, setTransferConfirmed] = useState(false);
+  const [roomSearch, setRoomSearch] = useState('');
+  const [roomRoleFilter, setRoomRoleFilter] = useState<'all' | 'owner' | 'manager' | 'member'>('all');
+  const [sortMode, setSortMode] = useState<'recent' | 'name'>('recent');
+  const [createdRoom, setCreatedRoom] = useState<SchedulingRoom | null>(null);
+  const [roomsHydrated, setRoomsHydrated] = useState(false);
+  const usesSupabaseData = Boolean(initialData);
+
+  useEffect(() => {
+    setWorkspaceProfile(profile);
+  }, [profile]);
+
+  useEffect(() => {
+    if (usesSupabaseData) {
+      setRooms(initialData?.rooms ?? []);
+      setSchedules(initialData?.schedules ?? []);
+      setTasks(initialData?.tasks ?? []);
+      setPreference(initialData?.preference ?? defaultPreference(profile.id));
+      setAdminUsers(initialData?.adminUsers?.length ? initialData.adminUsers : [profile]);
+      setRoomsHydrated(true);
+      return;
+    }
+
+    try {
+      const savedRooms = window.localStorage.getItem(roomStorageKey(workspaceProfile.id));
+
+      if (savedRooms) {
+        setRooms(mergeRooms(JSON.parse(savedRooms) as SchedulingRoom[], initialRooms));
+      }
+    } catch {
+      // 저장된 데모 데이터가 깨진 경우 기본 방 목록으로 계속 동작합니다.
+    } finally {
+      setRoomsHydrated(true);
+    }
+  }, [initialData, profile, usesSupabaseData, workspaceProfile.id]);
+
+  useEffect(() => {
+    if (!roomsHydrated || usesSupabaseData) {
+      return;
+    }
+
+    window.localStorage.setItem(roomStorageKey(workspaceProfile.id), JSON.stringify(rooms));
+  }, [workspaceProfile.id, rooms, roomsHydrated, usesSupabaseData]);
+
+  const emptyRoom: SchedulingRoom = {
+    id: 'empty-room',
+    name: '스케줄링 방',
+    description: null,
+    color: '#3558e6',
+    sharedScheduleColor: '#8b6ff4',
+    ownerUserId: workspaceProfile.id,
+    status: 'active',
+    defaultView: 'week',
+    businessStartTime: '00:00',
+    businessEndTime: '24:00',
+    inviteCode: '',
+    members: [],
+    todayScheduleCount: 0,
+    nextSchedule: null,
+    recentActivity: '',
+  };
+  const activeRoom = rooms.find((room) => room.id === roomId) ?? rooms[0] ?? emptyRoom;
+  const formRoom = selectedSchedule
+    ? rooms.find((room) => room.id === selectedSchedule.roomId) ?? activeRoom
+    : selectedTask?.roomId
+      ? rooms.find((room) => room.id === selectedTask.roomId) ?? activeRoom
+      : activeRoom;
+  const visibleRoomSchedules = schedules.filter((schedule) => schedule.roomId === activeRoom.id);
+  const todaySchedules = schedules
+    .filter((schedule) => {
+      const room = rooms.find((candidate) => candidate.id === schedule.roomId);
+      const member = room ? getMyMember(room, workspaceProfile) : undefined;
+      return member ? schedule.participantMemberIds.includes(member.id) : false;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+
+  const filteredRooms = useMemo(() => {
+    return rooms
+      .filter((room) => {
+        const member = getMyMember(room, workspaceProfile);
+        const matchesRole = roomRoleFilter === 'all' || member?.role === roomRoleFilter;
+        const matchesSearch = room.name.toLowerCase().includes(roomSearch.toLowerCase());
+        return matchesRole && matchesSearch;
+      })
+      .sort((a, b) => (sortMode === 'name' ? a.name.localeCompare(b.name) : b.recentActivity.localeCompare(a.recentActivity)));
+  }, [workspaceProfile, roomRoleFilter, roomSearch, rooms, sortMode]);
+
+  const openScheduleDetail = (schedule: Schedule) => {
+    setSelectedSchedule(schedule);
+    setActiveSheet('scheduleDetail');
+  };
+
+  const convertTaskToSchedule = (task: PreliminaryTask) => {
+    setSelectedTask(task);
+    const targetRoom = task.roomId ? rooms.find((room) => room.id === task.roomId) : rooms[0];
+    const member = targetRoom ? getMyMember(targetRoom, workspaceProfile) : undefined;
+
+    if (!roleCanManageSchedules(member)) {
+      setActiveSheet('roomInfo');
+      return;
+    }
+
+    setActiveSheet('scheduleForm');
+  };
+
+  const createInviteCode = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const segment = (length: number) =>
+      Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+
+    return `${segment(4)}-${segment(2)}`;
+  };
+
+  const addDemoRoom = async (values: CreateRoomFormValues) => {
+    const result = usesSupabaseData ? await createRoomAction(values) : null;
+
+    if (result && !result.ok) {
+      window.alert(result.message);
+      return;
+    }
+
+    if (usesSupabaseData && !result?.ok) {
+      window.alert('Supabase 방 생성 응답을 확인하지 못했습니다.');
+      return;
+    }
+
+    const roomId = result?.ok ? result.data.roomId : `room-${Date.now()}`;
+    const memberId = `member-${Date.now()}`;
+    const newRoom: SchedulingRoom = {
+      id: roomId,
+      name: values.name.trim(),
+      description: values.description.trim() || null,
+      color: values.color,
+      sharedScheduleColor: values.sharedScheduleColor,
+      ownerUserId: workspaceProfile.id,
+      status: 'active',
+      defaultView: values.defaultView,
+      businessStartTime: values.businessStartTime,
+      businessEndTime: values.businessEndTime,
+      inviteCode: result?.ok ? result.data.inviteCode : createInviteCode(),
+      todayScheduleCount: 0,
+      nextSchedule: null,
+      recentActivity: '방금 전',
+      members: [
+        {
+          id: memberId,
+          roomId,
+          userId: workspaceProfile.id,
+          nickname: values.nickname.trim(),
+          role: 'owner',
+          color: values.color,
+          joinedAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          email: workspaceProfile.email,
+          name: workspaceProfile.name,
+        },
+      ],
+    };
+
+    setRooms((previous) => [newRoom, ...previous]);
+    setCreatedRoom(newRoom);
+    setActiveSheet('createComplete');
+    router.refresh();
+  };
+
+  const addDemoSchedule = async (values: ScheduleFormValues) => {
+    const targetRoom = formRoom;
+    const member = getMyMember(targetRoom, workspaceProfile) ?? targetRoom.members[0];
+    const participantMemberIds = values.participantMemberIds.length > 0 ? values.participantMemberIds : [member.id];
+    const title = values.title.trim() || selectedTask?.title || '새 일정';
+    const date = values.date || '2026-07-02';
+    const startTime = values.startTime || '14:30';
+    const endTime = values.endTime || '15:00';
+    const estimatedPrice = values.estimatedPrice.trim() ? Number(values.estimatedPrice) : null;
+
+    const newSchedule: Schedule = {
+      id: selectedSchedule?.id ?? `schedule-${Date.now()}`,
+      roomId: targetRoom.id,
+      title,
+      startAt: `${date}T${startTime}:00+09:00`,
+      endAt: `${date}T${endTime}:00+09:00`,
+      address: values.address.trim() || null,
+      customerPhone: values.customerPhone.trim() || null,
+      estimatedPrice,
+      additionalInfo: values.additionalInfo.trim() || null,
+      status: 'scheduled',
+      createdByMemberId: member.id,
+      updatedAt: new Date().toISOString(),
+      participantMemberIds,
+      isChecked: false,
+    };
+
+    if (usesSupabaseData) {
+      const result = await saveScheduleAction({
+        scheduleId: selectedSchedule?.id,
+        roomId: targetRoom.id,
+        title,
+        participantMemberIds,
+        date,
+        startTime,
+        endTime,
+        address: values.address,
+        customerPhone: values.customerPhone,
+        estimatedPrice: values.estimatedPrice,
+        additionalInfo: values.additionalInfo,
+      });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+
+      newSchedule.id = result.data.scheduleId;
+    }
+
+    setSchedules((previous) =>
+      selectedSchedule
+        ? previous.map((schedule) => (schedule.id === selectedSchedule.id ? newSchedule : schedule))
+        : [...previous, newSchedule],
+    );
+    if (selectedTask) {
+      setTasks((previous) => previous.filter((task) => task.id !== selectedTask.id));
+    }
+    setSelectedSchedule(null);
+    setSelectedTask(null);
+    setActiveSheet(null);
+    router.refresh();
+  };
+
+  const joinDemoRoom = async (values: JoinRoomFormValues) => {
+    if (usesSupabaseData) {
+      const result = await joinRoomAction(values);
+
+      if (!result.ok) {
+        return { ok: false, message: result.message };
+      }
+
+      setActiveSheet(null);
+      router.push(`/rooms/${result.data.roomId}`);
+      router.refresh();
+      return { ok: true, message: '' };
+    }
+
+    const invite = values.invite.trim();
+    const inviteCode = invite.includes('invite=')
+      ? new URL(invite, 'https://shared-schedule.local').searchParams.get('invite') ?? invite
+      : invite;
+    const targetRoom = rooms.find((room) => room.inviteCode.toLowerCase() === inviteCode.toLowerCase());
+
+    if (!targetRoom) {
+      return { ok: false, message: '잘못된 초대 코드입니다.' };
+    }
+
+    if (targetRoom.status !== 'active') {
+      return { ok: false, message: '비활성화된 방입니다.' };
+    }
+
+    if (getMyMember(targetRoom, workspaceProfile)) {
+      return { ok: false, message: '이미 참여 중인 방입니다.' };
+    }
+
+    if (targetRoom.members.some((member) => member.nickname === values.nickname.trim())) {
+      return { ok: false, message: '이미 사용 중인 닉네임입니다.' };
+    }
+
+    const newMember: RoomMember = {
+      id: `member-${targetRoom.id}-${Date.now()}`,
+      roomId: targetRoom.id,
+      userId: workspaceProfile.id,
+      nickname: values.nickname.trim(),
+      role: 'member',
+      color: workspaceProfile.id === currentUser.id ? '#3558e6' : targetRoom.color,
+      joinedAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+      email: workspaceProfile.email,
+      name: workspaceProfile.name,
+    };
+
+    setRooms((previous) =>
+      previous.map((room) =>
+        room.id === targetRoom.id
+          ? { ...room, members: [...room.members, newMember], recentActivity: '방금 전 참여' }
+          : room,
+      ),
+    );
+    setActiveSheet(null);
+    router.push(`/rooms/${targetRoom.id}`);
+    return { ok: true, message: '' };
+  };
+
+  const addPreliminaryTask = async (values: PreliminaryTaskFormValues) => {
+    const newTask: PreliminaryTask = {
+      id: selectedTask?.id ?? `task-${Date.now()}`,
+      userId: workspaceProfile.id,
+      roomId: values.roomId === 'none' ? null : values.roomId,
+      title: values.title.trim(),
+      memo: values.memo.trim() || null,
+      priority: values.priority,
+      dueDate: values.dueDate || null,
+      isCompleted: selectedTask?.isCompleted ?? false,
+    };
+
+    if (usesSupabaseData) {
+      const result = selectedTask
+        ? await updatePreliminaryTaskAction({
+            taskId: selectedTask.id,
+            roomId: newTask.roomId,
+            title: newTask.title,
+            memo: newTask.memo,
+            priority: newTask.priority,
+            dueDate: newTask.dueDate,
+          })
+        : await createPreliminaryTaskAction({
+            userId: workspaceProfile.id,
+            roomId: newTask.roomId,
+            title: newTask.title,
+            memo: newTask.memo,
+            priority: newTask.priority,
+            dueDate: newTask.dueDate,
+          });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+
+      if (!selectedTask && 'data' in result) {
+        newTask.id = (result.data as { taskId: string }).taskId;
+      }
+    }
+
+    setTasks((previous) =>
+      selectedTask
+        ? previous.map((task) => (task.id === selectedTask.id ? newTask : task))
+        : [newTask, ...previous],
+    );
+    setSelectedTask(null);
+    setActiveSheet(null);
+    router.refresh();
+  };
+
+  const deleteSelectedSchedule = async () => {
+    if (selectedSchedule) {
+      if (usesSupabaseData) {
+        const result = await deleteScheduleAction(selectedSchedule);
+
+        if (!result.ok) {
+          window.alert(result.message);
+          return;
+        }
+      }
+
+      setSchedules((previous) => previous.filter((schedule) => schedule.id !== selectedSchedule.id));
+    }
+    setSelectedSchedule(null);
+    setDeleteScheduleOpen(false);
+    setActiveSheet(null);
+    router.refresh();
+  };
+
+  const deleteTask = async (taskId: string) => {
+    if (usesSupabaseData) {
+      const result = await deletePreliminaryTaskAction(taskId);
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setTasks((previous) => previous.filter((task) => task.id !== taskId));
+    router.refresh();
+  };
+
+  const editTask = (task: PreliminaryTask) => {
+    setSelectedTask(task);
+    setActiveSheet('preliminaryTask');
+  };
+
+  const toggleTaskCompleted = async (taskId: string, isCompleted: boolean) => {
+    const previousTasks = tasks;
+    setTasks((current) => current.map((task) => (task.id === taskId ? { ...task, isCompleted } : task)));
+
+    if (usesSupabaseData) {
+      const result = await updatePreliminaryTaskCompletedAction({ taskId, isCompleted });
+
+      if (!result.ok) {
+        setTasks(previousTasks);
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    router.refresh();
+  };
+
+  const toggleScheduleChecked = async (scheduleId: string, isChecked: boolean) => {
+    const previousSchedules = schedules;
+    setSchedules((current) =>
+      current.map((schedule) => (schedule.id === scheduleId ? { ...schedule, isChecked } : schedule)),
+    );
+
+    if (usesSupabaseData) {
+      const result = await updateScheduleCheckedAction({ scheduleId, isChecked });
+
+      if (!result.ok) {
+        setSchedules(previousSchedules);
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    router.refresh();
+  };
+
+  const deleteSchedule = async (scheduleId: string) => {
+    const schedule = schedules.find((candidate) => candidate.id === scheduleId);
+
+    if (!schedule) {
+      return;
+    }
+
+    if (usesSupabaseData) {
+      const result = await deleteScheduleAction(schedule);
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setSchedules((previous) => previous.filter((candidate) => candidate.id !== scheduleId));
+    router.refresh();
+  };
+
+  const deleteRoom = async (targetRoomId: string) => {
+    if (usesSupabaseData) {
+      const result = await deleteRoomAction(targetRoomId);
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setRooms((previous) => previous.filter((room) => room.id !== targetRoomId));
+    setSchedules((previous) => previous.filter((schedule) => schedule.roomId !== targetRoomId));
+    setTasks((previous) => previous.map((task) => (task.roomId === targetRoomId ? { ...task, roomId: null } : task)));
+    setDeleteRoomOpen(false);
+    setActiveSheet(null);
+    router.push('/dashboard');
+    router.refresh();
+  };
+
+  const updateScheduleStatus = async (scheduleId: string, status: Schedule['status']) => {
+    const schedule = schedules.find((candidate) => candidate.id === scheduleId);
+
+    if (!schedule) {
+      return;
+    }
+
+    if (usesSupabaseData) {
+      const result = await updateScheduleStatusAction({ id: scheduleId, roomId: schedule.roomId, status });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setSchedules((previous) =>
+      previous.map((candidate) =>
+        candidate.id === scheduleId ? { ...candidate, status, updatedAt: new Date().toISOString() } : candidate,
+      ),
+    );
+    router.refresh();
+  };
+
+  const changeMemberRole = async (targetRoomId: string, memberId: string, role: RoomMember['role']) => {
+    if (usesSupabaseData) {
+      const result = await updateMemberRoleAction({ roomId: targetRoomId, memberId, role });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setRooms((previous) =>
+      previous.map((room) =>
+        room.id === targetRoomId
+          ? {
+              ...room,
+              members: room.members.map((member) => (member.id === memberId ? { ...member, role } : member)),
+              recentActivity: '권한 변경',
+            }
+          : room,
+      ),
+    );
+    router.refresh();
+  };
+
+  const kickMember = async (targetRoomId: string, memberId: string) => {
+    if (usesSupabaseData) {
+      const result = await kickMemberAction({ roomId: targetRoomId, memberId });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setRooms((previous) =>
+      previous.map((room) =>
+        room.id === targetRoomId
+          ? { ...room, members: room.members.filter((member) => member.id !== memberId), recentActivity: '참여자 변경' }
+          : room,
+      ),
+    );
+    setSchedules((previous) =>
+      previous.map((schedule) =>
+        schedule.roomId === targetRoomId
+          ? { ...schedule, participantMemberIds: schedule.participantMemberIds.filter((id) => id !== memberId) }
+          : schedule,
+      ),
+    );
+    router.refresh();
+  };
+
+  const transferOwnership = async (targetRoomId: string, targetMemberId: string) => {
+    if (usesSupabaseData) {
+      const result = await transferOwnershipAction({ roomId: targetRoomId, memberId: targetMemberId });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setRooms((previous) =>
+      previous.map((room) => {
+        if (room.id !== targetRoomId) {
+          return room;
+        }
+
+        const targetMember = room.members.find((member) => member.id === targetMemberId);
+
+        if (!targetMember) {
+          return room;
+        }
+
+        return {
+          ...room,
+          ownerUserId: targetMember.userId,
+          recentActivity: '방장 위임',
+          members: room.members.map((member) => {
+            if (member.id === targetMemberId) {
+              return { ...member, role: 'owner' };
+            }
+
+            if (member.role === 'owner') {
+              return { ...member, role: 'manager' };
+            }
+
+            return member;
+          }),
+        };
+      }),
+    );
+    setTransferConfirmed(false);
+    setActiveSheet(null);
+    router.refresh();
+  };
+
+  const regenerateInviteCode = async (targetRoomId: string) => {
+    const result = usesSupabaseData ? await regenerateInviteCodeAction(targetRoomId) : null;
+
+    if (result && !result.ok) {
+      window.alert(result.message);
+      return;
+    }
+
+    setRooms((previous) =>
+      previous.map((room) =>
+        room.id === targetRoomId
+          ? { ...room, inviteCode: result?.ok ? result.data.inviteCode : createInviteCode() }
+          : room,
+      ),
+    );
+    router.refresh();
+  };
+
+  const saveProfile = async (values: ProfileFormValues) => {
+    if (usesSupabaseData) {
+      const result = await updateProfileAction({
+        name: values.name.trim() || workspaceProfile.name,
+        phone: values.phone.trim() || null,
+      });
+
+      if (!result.ok) {
+        window.alert(result.message);
+        return;
+      }
+    }
+
+    setWorkspaceProfile((previous) => ({
+      ...previous,
+      name: values.name.trim() || previous.name,
+      phone: values.phone.trim() || null,
+    }));
+    router.refresh();
+  };
+
+  const savePassword = async (values: PasswordFormValues) => {
+    if (values.password.length < 12) {
+      return { ok: false, message: '비밀번호는 12자 이상이어야 합니다.' };
+    }
+
+    if (!/[A-Z]/.test(values.password) || !/[a-z]/.test(values.password) || !/[0-9]/.test(values.password) || !/[^A-Za-z0-9]/.test(values.password)) {
+      return { ok: false, message: '비밀번호에는 대문자, 소문자, 숫자, 특수문자가 모두 포함되어야 합니다.' };
+    }
+
+    if (values.password !== values.passwordConfirm) {
+      return { ok: false, message: '비밀번호가 일치하지 않습니다.' };
+    }
+
+    if (usesSupabaseData) {
+      const result = await updateCurrentPasswordAction({ password: values.password });
+
+      if (!result.ok) {
+        return { ok: false, message: result.message };
+      }
+    }
+
+    return { ok: true, message: '비밀번호를 변경했습니다.' };
+  };
+
+  const savePreferences = async (values: UserPreferenceFormValues) => {
+    const nextPreference: UserPreference = {
+      userId: workspaceProfile.id,
+      pushEnabled: values.pushEnabled,
+      defaultCalendarView: values.defaultCalendarView,
+      filterOpacity: Math.min(Math.max(Math.round(values.filterOpacity), 0), 100),
+    };
+
+    if (usesSupabaseData) {
+      const result = await updateUserPreferencesAction(nextPreference);
+
+      if (!result.ok) {
+        return { ok: false, message: result.message };
+      }
+    }
+
+    setPreference(nextPreference);
+    router.refresh();
+    return { ok: true, message: '화면 설정을 저장했습니다.' };
+  };
+
+  const previewInvite = async (invite: string): Promise<
+    | { ok: true; data: InvitePreview }
+    | { ok: false; message: string }
+  > => {
+    if (usesSupabaseData) {
+      const result = await validateInviteAction(invite);
+
+      if (!result.ok) {
+        return { ok: false as const, message: result.message };
+      }
+
+      return { ok: true as const, data: result.data };
+    }
+
+    const inviteCode = invite.includes('invite=')
+      ? new URL(invite, 'https://shared-schedule.local').searchParams.get('invite') ?? invite
+      : invite;
+    const room = rooms.find((candidate) => candidate.inviteCode.toLowerCase() === inviteCode.trim().toLowerCase());
+
+    if (!room) {
+      return { ok: false as const, message: '잘못된 초대 코드입니다.' };
+    }
+
+    if (room.status !== 'active') {
+      return { ok: false as const, message: '비활성화된 방입니다.' };
+    }
+
+    return {
+      ok: true as const,
+      data: {
+        roomId: room.id,
+        name: room.name,
+        description: room.description,
+        ownerNickname: room.members.find((member) => member.role === 'owner')?.nickname ?? '-',
+        memberCount: room.members.length,
+      },
+    };
+  };
+
+  const addAdminUser = async (values: AdminUserFormValues) => {
+    if (values.password !== values.passwordConfirm) {
+      return { ok: false, message: '비밀번호가 일치하지 않습니다.' };
+    }
+
+    if (values.password.length < 12) {
+      return { ok: false, message: '비밀번호는 12자 이상이어야 합니다.' };
+    }
+
+    if (!/[A-Z]/.test(values.password) || !/[a-z]/.test(values.password) || !/[0-9]/.test(values.password) || !/[^A-Za-z0-9]/.test(values.password)) {
+      return { ok: false, message: '비밀번호에는 대문자, 소문자, 숫자, 특수문자가 모두 포함되어야 합니다.' };
+    }
+
+    const email = values.email.trim() || `${values.loginId.trim().toLowerCase()}@shared-schedule.local`;
+
+    if (adminUsers.some((user) => user.email.toLowerCase() === email.toLowerCase())) {
+      return { ok: false, message: '이미 존재하는 계정입니다.' };
+    }
+
+    if (usesSupabaseData) {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          loginId: values.loginId.trim(),
+          email: values.email.trim() || undefined,
+          password: values.password,
+          name: values.name.trim(),
+          phone: values.phone.trim() || null,
+          isServiceAdmin: values.isServiceAdmin,
+          status: 'active',
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        id?: string;
+        email?: string;
+        name?: string;
+        isServiceAdmin?: boolean;
+        status?: Profile['status'];
+        message?: string;
+      };
+
+      if (!response.ok) {
+        return { ok: false, message: payload.message ?? '계정을 생성하지 못했습니다.' };
+      }
+
+      setAdminUsers((previous) => [
+        {
+          id: payload.id ?? `user-${Date.now()}`,
+          email: payload.email ?? email,
+          name: payload.name ?? values.name.trim(),
+          phone: values.phone.trim() || null,
+          isServiceAdmin: Boolean(payload.isServiceAdmin),
+          status: payload.status ?? 'active',
+          lastLoginAt: null,
+        },
+        ...previous,
+      ]);
+      setActiveSheet(null);
+      router.refresh();
+      return { ok: true, message: '' };
+    }
+
+    setAdminUsers((previous) => [
+      {
+        id: `user-${Date.now()}`,
+        email,
+        name: values.name.trim() || values.loginId.trim(),
+        phone: values.phone.trim() || null,
+        isServiceAdmin: values.isServiceAdmin,
+        status: 'active',
+        lastLoginAt: null,
+      },
+      ...previous,
+    ]);
+    setActiveSheet(null);
+    return { ok: true, message: '' };
+  };
+
+  const updateAdminUser = async (userId: string, updates: Partial<Pick<Profile, 'name' | 'phone' | 'isServiceAdmin' | 'status'>>) => {
+    if (usesSupabaseData) {
+      const response = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, ...updates }),
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+
+      if (!response.ok) {
+        window.alert(payload.message ?? '사용자 정보를 수정하지 못했습니다.');
+        return;
+      }
+    }
+
+    setAdminUsers((previous) => previous.map((user) => (user.id === userId ? { ...user, ...updates } : user)));
+    router.refresh();
+  };
+
+  const resetAdminPassword = async (user: Profile) => {
+    const temporaryPassword = `Temp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`;
+    const password = window.prompt(`${user.name}님의 새 임시 비밀번호를 입력하세요.`, temporaryPassword);
+
+    if (!password) {
+      return;
+    }
+
+    if (password.length < 12) {
+      window.alert('비밀번호는 12자 이상이어야 합니다.');
+      return;
+    }
+
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      window.alert('비밀번호에는 대문자, 소문자, 숫자, 특수문자가 모두 포함되어야 합니다.');
+      return;
+    }
+
+    if (usesSupabaseData) {
+      const response = await fetch('/api/admin/users/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.id, password }),
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+
+      if (!response.ok) {
+        window.alert(payload.message ?? '비밀번호를 초기화하지 못했습니다.');
+        return;
+      }
+    }
+
+    setAdminUsers((previous) =>
+      previous.map((candidate) =>
+        candidate.id === user.id ? { ...candidate, lastLoginAt: '임시 비밀번호 발급됨' } : candidate,
+      ),
+    );
+    window.alert(`임시 비밀번호가 설정되었습니다.\n${password}`);
+    router.refresh();
+  };
+
+  return (
+    <AppFrame>
+      {page === 'dashboard' ? (
+        <DashboardView
+          profile={workspaceProfile}
+          rooms={rooms}
+          schedules={todaySchedules}
+          tasks={tasks}
+          onCreateRoom={() => setActiveSheet('createRoom')}
+          onJoinRoom={() => setActiveSheet('joinRoom')}
+          onOpenSchedule={openScheduleDetail}
+          onToggleScheduleChecked={toggleScheduleChecked}
+          onConvertTask={convertTaskToSchedule}
+          onDeleteTask={deleteTask}
+          onEditTask={editTask}
+          onToggleTaskCompleted={toggleTaskCompleted}
+          onAddTask={() => {
+            setSelectedTask(null);
+            setActiveSheet('preliminaryTask');
+          }}
+        />
+      ) : null}
+
+      {page === 'todayTasks' ? (
+        <TodayTasksView
+          profile={workspaceProfile}
+          rooms={rooms}
+          schedules={todaySchedules}
+          onOpenSchedule={openScheduleDetail}
+          onToggleScheduleChecked={toggleScheduleChecked}
+        />
+      ) : null}
+
+      {page === 'preliminaryTasks' ? (
+        <PreliminaryTasksView
+          rooms={rooms}
+          tasks={tasks}
+          onAddTask={() => {
+            setSelectedTask(null);
+            setActiveSheet('preliminaryTask');
+          }}
+          onConvertTask={convertTaskToSchedule}
+          onEditTask={editTask}
+          onDeleteTask={deleteTask}
+          onToggleTaskCompleted={toggleTaskCompleted}
+        />
+      ) : null}
+
+      {page === 'rooms' ? (
+        <RoomsView
+          profile={workspaceProfile}
+          rooms={filteredRooms}
+          roomSearch={roomSearch}
+          roleFilter={roomRoleFilter}
+          sortMode={sortMode}
+          onSearch={setRoomSearch}
+          onRoleFilter={setRoomRoleFilter}
+          onSort={setSortMode}
+          onCreateRoom={() => setActiveSheet('createRoom')}
+          onJoinRoom={() => setActiveSheet('joinRoom')}
+        />
+      ) : null}
+
+      {page === 'room' ? (
+        <RoomDetailView
+          room={activeRoom}
+          profile={workspaceProfile}
+          schedules={visibleRoomSchedules}
+          onOpenMenu={() => setActiveSheet('roomMenu')}
+          onOpenSchedule={openScheduleDetail}
+        />
+      ) : null}
+
+      {page === 'mypage' ? (
+        <MyPageView
+          profile={workspaceProfile}
+          preference={preference}
+          rooms={rooms}
+          onSaveProfile={saveProfile}
+          onSavePassword={savePassword}
+          onSavePreferences={savePreferences}
+        />
+      ) : null}
+
+      {page === 'admin' ? (
+        <AdminView
+          profile={workspaceProfile}
+          users={adminUsers}
+          onAddUser={() => setActiveSheet('adminAddUser')}
+          onToggleStatus={(user) => updateAdminUser(user.id, { status: user.status === 'active' ? 'inactive' : 'active' })}
+          onToggleAdmin={(user) => updateAdminUser(user.id, { isServiceAdmin: !user.isServiceAdmin })}
+          onResetPassword={resetAdminPassword}
+        />
+      ) : null}
+
+      <CreateRoomSheet open={activeSheet === 'createRoom'} onClose={() => setActiveSheet(null)} onSubmit={addDemoRoom} />
+      <CreateRoomCompleteSheet
+        open={activeSheet === 'createComplete'}
+        room={createdRoom ?? rooms[0] ?? emptyRoom}
+        onClose={() => setActiveSheet(null)}
+        onOpenRoom={(targetRoomId) => {
+          setActiveSheet(null);
+          router.push(`/rooms/${targetRoomId}`);
+        }}
+      />
+      <JoinRoomSheet
+        open={activeSheet === 'joinRoom'}
+        onClose={() => setActiveSheet(null)}
+        onPreview={previewInvite}
+        onSubmit={joinDemoRoom}
+      />
+      <RoomMenuSheet
+        open={activeSheet === 'roomMenu'}
+        room={activeRoom}
+        profile={workspaceProfile}
+        onClose={() => setActiveSheet(null)}
+        onScheduleAdd={() => {
+          setSelectedSchedule(null);
+          setSelectedTask(null);
+          setActiveSheet('scheduleForm');
+        }}
+        onParticipants={() => setActiveSheet('participantManagement')}
+        onTransfer={() => setActiveSheet('transferOwnership')}
+        onManagement={() => setActiveSheet('roomScheduleManagement')}
+        onInvite={() => setActiveSheet('inviteInfo')}
+        onInfo={() => setActiveSheet('roomInfo')}
+        onDelete={() => {
+          setActiveSheet(null);
+          setDeleteRoomOpen(true);
+        }}
+      />
+      <ScheduleFormSheet
+        open={activeSheet === 'scheduleForm'}
+        room={formRoom}
+        schedule={selectedSchedule}
+        currentUser={workspaceProfile}
+        task={selectedTask}
+        onClose={() => {
+          setSelectedSchedule(null);
+          setSelectedTask(null);
+          setActiveSheet(null);
+        }}
+        onSubmit={addDemoSchedule}
+      />
+      <ScheduleDetailSheet
+        open={activeSheet === 'scheduleDetail'}
+        schedule={selectedSchedule}
+        room={selectedSchedule ? rooms.find((room) => room.id === selectedSchedule.roomId) ?? activeRoom : activeRoom}
+        profile={workspaceProfile}
+        onClose={() => setActiveSheet(null)}
+        onEdit={() => setActiveSheet('scheduleForm')}
+        onDelete={() => setDeleteScheduleOpen(true)}
+      />
+      <ParticipantManagementSheet
+        open={activeSheet === 'participantManagement'}
+        room={activeRoom}
+        onClose={() => setActiveSheet(null)}
+        onTransfer={() => setActiveSheet('transferOwnership')}
+        onRoleChange={(memberId, role) => changeMemberRole(activeRoom.id, memberId, role)}
+        onKick={(memberId) => kickMember(activeRoom.id, memberId)}
+      />
+      <TransferOwnershipSheet
+        open={activeSheet === 'transferOwnership'}
+        room={activeRoom}
+        checked={transferConfirmed}
+        onCheckedChange={setTransferConfirmed}
+        onConfirm={(memberId) => transferOwnership(activeRoom.id, memberId)}
+        onClose={() => {
+          setTransferConfirmed(false);
+          setActiveSheet(null);
+        }}
+      />
+      <RoomScheduleManagementSheet
+        open={activeSheet === 'roomScheduleManagement'}
+        room={activeRoom}
+        schedules={visibleRoomSchedules}
+        onClose={() => setActiveSheet(null)}
+        onOpenSchedule={openScheduleDetail}
+        onEditSchedule={(schedule) => {
+          setSelectedSchedule(schedule);
+          setActiveSheet('scheduleForm');
+        }}
+        onDeleteSchedule={deleteSchedule}
+        onStatusChange={updateScheduleStatus}
+      />
+      <PreliminaryTaskSheet
+        open={activeSheet === 'preliminaryTask'}
+        rooms={rooms}
+        task={selectedTask}
+        onClose={() => {
+          setSelectedTask(null);
+          setActiveSheet(null);
+        }}
+        onSubmit={addPreliminaryTask}
+      />
+      <AdminAddUserSheet open={activeSheet === 'adminAddUser'} onClose={() => setActiveSheet(null)} onSubmit={addAdminUser} />
+      <InviteInfoSheet
+        open={activeSheet === 'inviteInfo'}
+        room={activeRoom}
+        onClose={() => setActiveSheet(null)}
+        onRegenerate={() => regenerateInviteCode(activeRoom.id)}
+      />
+      <RoomInfoSheet open={activeSheet === 'roomInfo'} room={activeRoom} onClose={() => setActiveSheet(null)} />
+      <ConfirmDialog
+        open={deleteScheduleOpen}
+        title="이 일정을 삭제하시겠습니까?"
+        description="삭제한 일정은 복구할 수 없습니다."
+        confirmLabel="삭제"
+        danger
+        onClose={() => setDeleteScheduleOpen(false)}
+        onConfirm={deleteSelectedSchedule}
+      />
+      <ConfirmDialog
+        open={deleteRoomOpen}
+        title="이 방을 삭제하시겠습니까?"
+        description="방을 삭제하면 참여자, 초대 코드, 일정이 함께 삭제됩니다. 삭제한 방은 복구할 수 없습니다."
+        confirmLabel="방 삭제"
+        danger
+        onClose={() => setDeleteRoomOpen(false)}
+        onConfirm={() => deleteRoom(activeRoom.id)}
+      />
+    </AppFrame>
+  );
+}
+
+function DashboardView({
+  profile,
+  rooms,
+  schedules,
+  tasks,
+  onCreateRoom,
+  onJoinRoom,
+  onOpenSchedule,
+  onToggleScheduleChecked,
+  onConvertTask,
+  onDeleteTask,
+  onEditTask,
+  onToggleTaskCompleted,
+  onAddTask,
+}: {
+  profile: Profile;
+  rooms: SchedulingRoom[];
+  schedules: Schedule[];
+  tasks: PreliminaryTask[];
+  onCreateRoom: () => void;
+  onJoinRoom: () => void;
+  onOpenSchedule: (schedule: Schedule) => void;
+  onToggleScheduleChecked: (scheduleId: string, isChecked: boolean) => void;
+  onConvertTask: (task: PreliminaryTask) => void;
+  onDeleteTask: (taskId: string) => void;
+  onEditTask: (task: PreliminaryTask) => void;
+  onToggleTaskCompleted: (taskId: string, isCompleted: boolean) => void;
+  onAddTask: () => void;
+}) {
+  const [visibleRoomCount, setVisibleRoomCount] = useState(2);
+  const [visibleScheduleCount, setVisibleScheduleCount] = useState(3);
+  const [visibleTaskCount, setVisibleTaskCount] = useState(2);
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+  const visibleRooms = rooms.slice(0, visibleRoomCount);
+  const visibleSchedules = schedules.slice(0, visibleScheduleCount);
+  const visibleTasks = tasks.slice(0, visibleTaskCount);
+  const hiddenRoomCount = Math.max(rooms.length - visibleRoomCount, 0);
+  const hiddenScheduleCount = Math.max(schedules.length - visibleScheduleCount, 0);
+  const hiddenTaskCount = Math.max(tasks.length - visibleTaskCount, 0);
+  const myCalendarRoom = useMemo(() => buildMyCalendarRoom(profile, rooms), [profile, rooms]);
+
+  return (
+    <div className="space-y-6">
+      <AppHeader profile={profile} subtitle="오늘의 일정과 할 일을 확인하세요." />
+      <section className="grid grid-cols-2 gap-3">
+        <Button type="button" onClick={onCreateRoom}>
+          <Plus className="h-4 w-4" />
+          새 방 만들기
+        </Button>
+        <Button type="button" variant="outline" onClick={onJoinRoom}>
+          <UserPlus className="h-4 w-4" />
+          방 참여하기
+        </Button>
+      </section>
+      <SectionHeader title="참여 중인 스케줄링" href="/rooms" />
+      <div className="space-y-3">
+        {rooms.length > 0 ? (
+          visibleRooms.map((room) => (
+            <RoomCard key={room.id} room={room} currentUser={profile} />
+          ))
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              className="min-h-32 rounded-2xl border border-app-border bg-white p-4 text-left shadow-sm"
+              onClick={onCreateRoom}
+            >
+              <Plus className="mb-3 h-5 w-5 text-app-blue" />
+              <p className="font-black text-gray-950">새 방 만들기</p>
+              <p className="mt-1 text-xs text-gray-500">팀 일정을 공유할 방을 시작하세요.</p>
+            </button>
+            <button
+              type="button"
+              className="min-h-32 rounded-2xl border border-app-border bg-white p-4 text-left shadow-sm"
+              onClick={onJoinRoom}
+            >
+              <UserPlus className="mb-3 h-5 w-5 text-app-blue" />
+              <p className="font-black text-gray-950">방 참여하기</p>
+              <p className="mt-1 text-xs text-gray-500">초대 코드로 기존 방에 들어가세요.</p>
+            </button>
+          </div>
+        )}
+        {hiddenRoomCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setVisibleRoomCount((count) => count + 2)}
+          >
+            <Plus className="h-4 w-4" />
+            {Math.min(hiddenRoomCount, 2)}개 더 보기
+          </Button>
+        ) : null}
+      </div>
+      <SectionHeader title="내 달력" />
+      <ScheduleCalendar
+        room={myCalendarRoom}
+        schedules={schedules}
+        currentUser={profile}
+        onScheduleClick={onOpenSchedule}
+        compact={!isCalendarExpanded}
+        timeTableAction={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCalendarExpanded((expanded) => !expanded)}
+          >
+            {isCalendarExpanded ? '간략히보기' : '전체보기'}
+          </Button>
+        }
+      />
+      <SectionHeader title="오늘 할 일" href="/dashboard/today" />
+      <div className="space-y-3">
+        {schedules.length > 0 ? (
+          visibleSchedules.map((schedule) => {
+            const room = rooms.find((candidate) => candidate.id === schedule.roomId) ?? rooms[0];
+            return (
+              <TodayTaskCard
+                key={schedule.id}
+                schedule={schedule}
+                room={room}
+                onOpen={() => onOpenSchedule(schedule)}
+                onToggleChecked={(checked) => onToggleScheduleChecked(schedule.id, checked)}
+              />
+            );
+          })
+        ) : (
+          <EmptyState title="오늘 할 일이 없습니다" description="내게 배정된 일정이 여기에 표시됩니다." />
+        )}
+        {hiddenScheduleCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setVisibleScheduleCount((count) => count + 2)}
+          >
+            <Plus className="h-4 w-4" />
+            {Math.min(hiddenScheduleCount, 2)}개 더 보기
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <SectionHeader title="예비 할 일" href="/dashboard/preliminary" />
+        <Button type="button" size="sm" onClick={onAddTask}>
+          <Plus className="h-4 w-4" />
+          추가
+        </Button>
+      </div>
+      <div className="space-y-3">
+        {tasks.length > 0 ? (
+          visibleTasks.map((task) => (
+            <PreliminaryTaskCard
+              key={task.id}
+              task={task}
+              room={rooms.find((room) => room.id === task.roomId)}
+              onConvert={() => onConvertTask(task)}
+              onEdit={() => onEditTask(task)}
+              onDelete={() => onDeleteTask(task.id)}
+              onToggleCompleted={(checked) => onToggleTaskCompleted(task.id, checked)}
+            />
+          ))
+        ) : (
+          <EmptyState title="예비 할 일이 없습니다" description="날짜가 정해지지 않은 할 일이 여기에 표시됩니다." />
+        )}
+        {hiddenTaskCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setVisibleTaskCount((count) => count + 2)}
+          >
+            <Plus className="h-4 w-4" />
+            {Math.min(hiddenTaskCount, 2)}개 더 보기
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TodayTasksView({
+  profile,
+  rooms,
+  schedules,
+  onOpenSchedule,
+  onToggleScheduleChecked,
+}: {
+  profile: Profile;
+  rooms: SchedulingRoom[];
+  schedules: Schedule[];
+  onOpenSchedule: (schedule: Schedule) => void;
+  onToggleScheduleChecked: (scheduleId: string, isChecked: boolean) => void;
+}) {
+  const myCalendarRoom = useMemo(() => buildMyCalendarRoom(profile, rooms), [profile, rooms]);
+
+  return (
+    <div className="space-y-5">
+      <BackHeader title="오늘 할 일" description="참여 중인 모든 방에서 내게 배정된 일정을 모았습니다." />
+      <ScheduleCalendar room={myCalendarRoom} schedules={schedules} currentUser={profile} onScheduleClick={onOpenSchedule} />
+      <div className="space-y-3">
+        {schedules.length > 0 ? (
+          schedules.map((schedule) => {
+            const room = rooms.find((candidate) => candidate.id === schedule.roomId) ?? rooms[0];
+            return (
+              <TodayTaskCard
+                key={schedule.id}
+                schedule={schedule}
+                room={room}
+                onOpen={() => onOpenSchedule(schedule)}
+                onToggleChecked={(checked) => onToggleScheduleChecked(schedule.id, checked)}
+              />
+            );
+          })
+        ) : (
+          <EmptyState title="오늘 할 일이 없습니다" description="내게 배정된 일정이 여기에 표시됩니다." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PreliminaryTasksView({
+  rooms,
+  tasks,
+  onAddTask,
+  onConvertTask,
+  onEditTask,
+  onDeleteTask,
+  onToggleTaskCompleted,
+}: {
+  rooms: SchedulingRoom[];
+  tasks: PreliminaryTask[];
+  onAddTask: () => void;
+  onConvertTask: (task: PreliminaryTask) => void;
+  onEditTask: (task: PreliminaryTask) => void;
+  onDeleteTask: (taskId: string) => void;
+  onToggleTaskCompleted: (taskId: string, isCompleted: boolean) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <BackHeader title="예비 할 일" description="아직 날짜가 정해지지 않은 개인 할 일을 관리합니다." />
+        <Button type="button" size="icon" onClick={onAddTask} aria-label="예비 할 일 추가">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="space-y-3">
+        {tasks.length > 0 ? (
+          tasks.map((task) => (
+            <PreliminaryTaskCard
+              key={task.id}
+              task={task}
+              room={rooms.find((room) => room.id === task.roomId)}
+              onConvert={() => onConvertTask(task)}
+              onEdit={() => onEditTask(task)}
+              onDelete={() => onDeleteTask(task.id)}
+              onToggleCompleted={(checked) => onToggleTaskCompleted(task.id, checked)}
+            />
+          ))
+        ) : (
+          <EmptyState title="예비 할 일이 없습니다" description="추가 버튼으로 할 일을 등록하세요." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RoomsView({
+  profile,
+  rooms,
+  roomSearch,
+  roleFilter,
+  sortMode,
+  onSearch,
+  onRoleFilter,
+  onSort,
+  onCreateRoom,
+  onJoinRoom,
+}: {
+  profile: Profile;
+  rooms: SchedulingRoom[];
+  roomSearch: string;
+  roleFilter: 'all' | 'owner' | 'manager' | 'member';
+  sortMode: 'recent' | 'name';
+  onSearch: (value: string) => void;
+  onRoleFilter: (value: 'all' | 'owner' | 'manager' | 'member') => void;
+  onSort: (value: 'recent' | 'name') => void;
+  onCreateRoom: () => void;
+  onJoinRoom: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <BackHeader title="참여 중인 방" />
+      <div className="relative">
+        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+        <input
+          value={roomSearch}
+          onChange={(event) => onSearch(event.target.value)}
+          placeholder="방 검색"
+          className="h-11 w-full rounded-xl border border-app-border bg-white pl-9 pr-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+        />
+      </div>
+      <div className="flex gap-2 overflow-x-auto scrollbar-none">
+        {(['all', 'owner', 'manager', 'member'] as const).map((role) => (
+          <button
+            key={role}
+            type="button"
+            className={cn(
+              'min-h-11 shrink-0 rounded-full border px-4 text-sm font-bold capitalize',
+              roleFilter === role ? 'border-app-blue bg-app-blue text-white' : 'border-app-border bg-white text-gray-600',
+            )}
+            onClick={() => onRoleFilter(role)}
+          >
+            {role === 'all' ? '전체' : roomRoleLabels[role]}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Button type="button" variant={sortMode === 'recent' ? 'primary' : 'outline'} onClick={() => onSort('recent')}>
+          최근순
+        </Button>
+        <Button type="button" variant={sortMode === 'name' ? 'primary' : 'outline'} onClick={() => onSort('name')}>
+          이름
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Button type="button" onClick={onCreateRoom}>
+          <Plus className="h-4 w-4" />
+          새 방 만들기
+        </Button>
+        <Button type="button" variant="outline" onClick={onJoinRoom}>
+          <UserPlus className="h-4 w-4" />
+          방 참여하기
+        </Button>
+      </div>
+      <div className="space-y-3">
+        {rooms.map((room) => (
+          <RoomCard key={room.id} room={room} currentUser={profile} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RoomDetailView({
+  room,
+  profile,
+  schedules,
+  onOpenMenu,
+  onOpenSchedule,
+}: {
+  room: SchedulingRoom;
+  profile: Profile;
+  schedules: Schedule[];
+  onOpenMenu: () => void;
+  onOpenSchedule: (schedule: Schedule) => void;
+}) {
+  const member = getMyMember(room, profile);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <BackHeader title={room.name} description={`내 닉네임: ${member?.nickname ?? '-'}`} />
+        <Button type="button" variant="outline" size="icon" onClick={onOpenMenu} aria-label="방 메뉴">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </div>
+      <Card className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            {member ? <RoleBadge role={member.role} /> : null}
+            <span className="text-xs font-semibold text-gray-500">{room.members.length}명</span>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">{room.description}</p>
+        </div>
+        <ParticipantAvatarGroup members={room.members} />
+      </Card>
+      <ScheduleCalendar room={room} schedules={schedules} currentUser={profile} onScheduleClick={onOpenSchedule} />
+      <button
+        type="button"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+96px)] right-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-app-blue text-white shadow-lg md:right-[calc(50%_-_344px)]"
+        onClick={onOpenMenu}
+        aria-label="방 기능 열기"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
+  );
+}
+
+function MyPageView({
+  profile,
+  preference,
+  rooms,
+  onSaveProfile,
+  onSavePassword,
+  onSavePreferences,
+}: {
+  profile: Profile;
+  preference: UserPreference;
+  rooms: SchedulingRoom[];
+  onSaveProfile: (values: ProfileFormValues) => void;
+  onSavePassword: (values: PasswordFormValues) => Promise<{ ok: boolean; message: string }>;
+  onSavePreferences: (values: UserPreferenceFormValues) => Promise<{ ok: boolean; message: string }>;
+}) {
+  const owned = rooms.filter((room) => getMyMember(room, profile)?.role === 'owner').length;
+  const managed = rooms.filter((room) => getMyMember(room, profile)?.role === 'manager').length;
+  const member = rooms.filter((room) => getMyMember(room, profile)?.role === 'member').length;
+  const [savedMessage, setSavedMessage] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [preferenceMessage, setPreferenceMessage] = useState('');
+
+  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    onSaveProfile({
+      name: String(formData.get('name') ?? ''),
+      phone: String(formData.get('phone') ?? ''),
+    });
+    setSavedMessage('내 정보를 저장했습니다.');
+  };
+
+  const handlePasswordSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const result = await onSavePassword({
+      password: String(formData.get('password') ?? ''),
+      passwordConfirm: String(formData.get('passwordConfirm') ?? ''),
+    });
+
+    setPasswordMessage(result.message);
+
+    if (result.ok) {
+      form.reset();
+    }
+  };
+
+  const handlePreferenceSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const view = String(formData.get('defaultCalendarView') ?? preference.defaultCalendarView);
+    const result = await onSavePreferences({
+      defaultCalendarView: view === 'month' ? 'month' : 'week',
+      filterOpacity: Number(formData.get('filterOpacity') ?? preference.filterOpacity),
+      pushEnabled: formData.get('pushEnabled') === 'on',
+    });
+
+    setPreferenceMessage(result.message);
+  };
+
+  return (
+    <div className="space-y-5">
+      <AppHeader profile={profile} subtitle="내 정보와 참여 중인 방을 관리하세요." />
+      <Card>
+        <h2 className="font-black text-gray-950">{profile.name}</h2>
+        <p className="mt-1 text-sm text-gray-500">{profile.email}</p>
+        <div className="mt-4 flex gap-2">
+          {profile.isServiceAdmin ? <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">서비스 관리자</span> : null}
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{accountStatusLabels[profile.status]}</span>
+        </div>
+      </Card>
+      <Card>
+        <h3 className="font-black text-gray-950">내 정보</h3>
+        <form className="mt-3 space-y-3" onSubmit={handleSave}>
+          <Field label="이름" name="name" defaultValue={profile.name} />
+          <Field label="전화번호" name="phone" defaultValue={profile.phone ?? ''} />
+          {savedMessage ? <p className="text-xs font-semibold text-app-blue">{savedMessage}</p> : null}
+          <Button type="submit" className="w-full">내 정보 저장</Button>
+        </form>
+      </Card>
+      <Card>
+        <h3 className="font-black text-gray-950">비밀번호 변경</h3>
+        <form className="mt-3 space-y-3" onSubmit={handlePasswordSave}>
+          <Field label="새 비밀번호" name="password" type="password" placeholder="12자 이상, 대소문자·숫자·특수문자 포함" required />
+          <Field label="새 비밀번호 확인" name="passwordConfirm" type="password" placeholder="비밀번호를 다시 입력" required />
+          {passwordMessage ? (
+            <p className={cn('text-xs font-semibold', passwordMessage.includes('변경했습니다') ? 'text-app-blue' : 'text-app-danger')}>
+              {passwordMessage}
+            </p>
+          ) : null}
+          <Button type="submit" className="w-full">비밀번호 변경</Button>
+        </form>
+      </Card>
+      <Card>
+        <h3 className="font-black text-gray-950">일정 및 화면 설정</h3>
+        <form className="mt-4 space-y-4" onSubmit={handlePreferenceSave}>
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-gray-700">기본 보기</span>
+            <select
+              name="defaultCalendarView"
+              defaultValue={preference.defaultCalendarView}
+              className="h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+            >
+              <option value="week">주간</option>
+              <option value="month">월간</option>
+            </select>
+          </label>
+          <Field
+            label="필터 투명도"
+            name="filterOpacity"
+            type="number"
+            min={0}
+            max={100}
+            defaultValue={preference.filterOpacity}
+          />
+          <label className="flex min-h-11 items-center gap-3 rounded-xl border border-app-border bg-white px-3 text-sm font-semibold text-gray-700">
+            <input type="checkbox" name="pushEnabled" defaultChecked={preference.pushEnabled} />
+            알림 사용
+          </label>
+          {preferenceMessage ? <p className="text-xs font-semibold text-app-blue">{preferenceMessage}</p> : null}
+          <Button type="submit" className="w-full">화면 설정 저장</Button>
+        </form>
+      </Card>
+      <Card>
+        <h3 className="font-black text-gray-950">내 스케줄링 방</h3>
+        <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+          <Stat label="전체" value={rooms.length} />
+          <Stat label="방장" value={owned} />
+          <Stat label="매니저" value={managed} />
+          <Stat label="참여자" value={member} />
+        </div>
+      </Card>
+      <div className="space-y-3">
+        {rooms.map((room) => {
+          const myMember = getMyMember(room, profile);
+          return (
+            <Card key={room.id} className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-gray-950">{room.name}</p>
+                <p className="mt-1 text-xs text-gray-500">방 닉네임: {myMember?.nickname}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {myMember ? <RoleBadge role={myMember.role} /> : null}
+                <Link href={`/rooms/${room.id}`} className="inline-flex min-h-11 items-center text-sm font-bold text-app-blue">
+                  열기
+                </Link>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      {profile.isServiceAdmin ? (
+        <Link href="/admin" className="block">
+          <Card className="flex items-center justify-between">
+            <div>
+              <p className="font-black text-gray-950">관리자 설정</p>
+              <p className="text-xs text-gray-500">서비스 계정을 관리합니다.</p>
+            </div>
+            <Shield className="h-5 w-5 text-app-blue" />
+          </Card>
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function AdminView({
+  profile,
+  users,
+  onAddUser,
+  onToggleStatus,
+  onToggleAdmin,
+  onResetPassword,
+}: {
+  profile: Profile;
+  users: Profile[];
+  onAddUser: () => void;
+  onToggleStatus: (user: Profile) => void;
+  onToggleAdmin: (user: Profile) => void;
+  onResetPassword: (user: Profile) => void;
+}) {
+  if (!profile.isServiceAdmin) {
+    return (
+      <div className="space-y-5">
+        <BackHeader title="관리자" />
+        <Card className="py-10 text-center">
+          <Shield className="mx-auto h-10 w-10 text-app-danger" />
+          <h1 className="mt-4 text-xl font-black text-gray-950">관리자 권한이 없습니다</h1>
+          <p className="mt-2 text-sm text-gray-500">서비스 관리자만 이 페이지에 접근할 수 있습니다.</p>
+          <Link href="/mypage" className="mt-5 inline-flex">
+            <Button type="button" variant="outline">마이페이지로 이동</Button>
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <BackHeader title="서비스 계정 관리" />
+      <Button type="button" className="w-full" onClick={onAddUser}>
+        <UserPlus className="h-4 w-4" />
+        계정 추가
+      </Button>
+      <div className="space-y-3">
+        {users.map((user) => (
+          <Card key={user.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-black text-gray-950">{user.name}</p>
+                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="mt-2 text-xs text-gray-400">마지막 로그인: {user.lastLoginAt ?? '-'}</p>
+                <p className="mt-1 text-xs font-semibold text-gray-500">상태: {accountStatusLabels[user.status]}</p>
+              </div>
+              <span className={cn('rounded-full px-3 py-1 text-xs font-bold', user.isServiceAdmin ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600')}>
+                {user.isServiceAdmin ? '서비스 관리자' : '일반 사용자'}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onResetPassword(user)}>
+                비밀번호 초기화
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onToggleStatus(user)}>
+                {user.status === 'active' ? '비활성화' : '활성화'}
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onToggleAdmin(user)}>
+                {user.isServiceAdmin ? '관리자 해제' : '관리자 부여'}
+              </Button>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ title, href }: { title: string; href?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <h2 className="text-lg font-black text-gray-950">{title}</h2>
+      {href ? (
+        <Link href={href} className="inline-flex min-h-11 items-center text-sm font-bold text-app-blue">
+          전체 보기
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function BackHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Link href="/dashboard" className="flex h-11 w-11 items-center justify-center rounded-full border border-app-border bg-white">
+        <ArrowLeft className="h-4 w-4" />
+      </Link>
+      <div>
+        <h1 className="text-2xl font-black text-gray-950">{title}</h1>
+        {description ? <p className="mt-1 text-sm text-gray-500">{description}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-gray-50 p-3">
+      <p className="text-lg font-black text-gray-950">{value}</p>
+      <p className="text-[11px] text-gray-500">{label}</p>
+    </div>
+  );
+}
+
+function CreateRoomSheet({
+  open,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (values: CreateRoomFormValues) => Promise<void>;
+}) {
+  const formId = 'create-room-form';
+  const [timeError, setTimeError] = useState('');
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setTimeError('');
+
+    const formData = new FormData(event.currentTarget);
+    const values: CreateRoomFormValues = {
+      name: String(formData.get('name') ?? ''),
+      description: String(formData.get('description') ?? ''),
+      nickname: String(formData.get('nickname') ?? ''),
+      color: String(formData.get('color') ?? '#3558e6'),
+      sharedScheduleColor: String(formData.get('sharedScheduleColor') ?? '#8b6ff4'),
+      defaultView: String(formData.get('defaultView') ?? 'week') === 'month' ? 'month' : 'week',
+      businessStartTime: String(formData.get('businessStartTime') ?? '09:00'),
+      businessEndTime: String(formData.get('businessEndTime') ?? '18:00'),
+    };
+
+    const startAt = new Date(`2026-07-02T${values.businessStartTime}:00+09:00`);
+    const endAt = new Date(`2026-07-02T${values.businessEndTime}:00+09:00`);
+
+    if (endAt <= startAt) {
+      setTimeError('업무 종료 시간은 시작 시간보다 늦어야 합니다.');
+      return;
+    }
+
+    await onSubmit(values);
+  };
+
+  return (
+    <Sheet
+      open={open}
+      title="스케줄링 방 만들기"
+      description="방 정보, 내 닉네임, 색상, 업무 시간을 설정하세요."
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+          <Button type="submit" form={formId}>방 만들기</Button>
+        </div>
+      }
+    >
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        <Field label="방 이름" name="name" placeholder="천안 청소팀" required />
+        <TextareaField label="방 설명" name="description" placeholder="스케줄링 방 설명을 입력하세요" />
+        <Field label="방에서 사용할 내 닉네임" name="nickname" placeholder="민수" required />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="방 대표 색상" name="color" type="color" defaultValue="#3558e6" className="p-1" />
+          <Field label="공동 일정 색상" name="sharedScheduleColor" type="color" defaultValue="#8b6ff4" className="p-1" />
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-semibold text-gray-700">기본 보기</p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex h-11 items-center justify-center gap-2 rounded-xl border border-app-border bg-white text-sm font-bold text-gray-700">
+              <input type="radio" name="defaultView" value="week" defaultChecked />
+              주간
+            </label>
+            <label className="flex h-11 items-center justify-center gap-2 rounded-xl border border-app-border bg-white text-sm font-bold text-gray-700">
+              <input type="radio" name="defaultView" value="month" />
+              월간
+            </label>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="업무 시작" name="businessStartTime" type="time" defaultValue="09:00" required />
+          <Field label="업무 종료" name="businessEndTime" type="time" defaultValue="18:00" required />
+        </div>
+        {timeError ? <p className="text-xs font-semibold text-app-danger">{timeError}</p> : null}
+      </form>
+    </Sheet>
+  );
+}
+
+function CreateRoomCompleteSheet({
+  open,
+  room,
+  onClose,
+  onOpenRoom,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  onClose: () => void;
+  onOpenRoom: (roomId: string) => void;
+}) {
+  const [copiedLabel, setCopiedLabel] = useState('');
+  const inviteLink = typeof window === 'undefined'
+    ? `/rooms/${room.id}?invite=${room.inviteCode}`
+    : `${window.location.origin}/rooms/${room.id}?invite=${room.inviteCode}`;
+  const ownerMember = room.members.find((member) => member.role === 'owner');
+
+  const copyText = async (text: string, label: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+
+      setCopiedLabel(`${label}를 복사했습니다.`);
+    } catch {
+      setCopiedLabel('복사하지 못했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  return (
+    <Sheet open={open} title="방 생성 완료" description="참여자에게 초대 정보를 공유하세요." onClose={onClose}>
+      <div className="space-y-4">
+        <Card>
+          <p className="font-black text-gray-950">{room.name}</p>
+          <p className="mt-1 text-sm text-gray-500">내 닉네임: {ownerMember?.nickname ?? '-'}</p>
+          <p className="mt-1 text-sm text-gray-500">내 권한: 방장</p>
+        </Card>
+        <Card className="space-y-3">
+          <p className="text-xs font-bold text-gray-400">초대 코드</p>
+          <div className="flex items-center justify-between rounded-xl bg-gray-50 p-3">
+            <span className="font-black text-gray-950">{room.inviteCode}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="text-xs font-bold text-app-blue"
+                onClick={() => copyText(room.inviteCode, '초대 코드')}
+              >
+                복사하기
+              </button>
+              <button type="button" aria-label="초대 코드 복사" onClick={() => copyText(room.inviteCode, '초대 코드')}>
+                <Copy className="h-4 w-4 text-app-blue" />
+              </button>
+            </div>
+          </div>
+          <Button type="button" className="w-full" onClick={() => copyText(inviteLink, '초대 링크')}>
+            초대 링크 복사
+          </Button>
+          {copiedLabel ? <p className="text-xs font-semibold text-app-blue">{copiedLabel}</p> : null}
+        </Card>
+        <Card className="space-y-2 text-sm text-gray-600">
+          <p><span className="font-bold text-gray-900">기본 보기:</span> {room.defaultView === 'week' ? '주간' : '월간'}</p>
+          <p><span className="font-bold text-gray-900">업무 시간:</span> {room.businessStartTime} - {room.businessEndTime}</p>
+          <p><span className="font-bold text-gray-900">참여자:</span> {room.members.length}명</p>
+        </Card>
+        <Button type="button" className="w-full" onClick={() => onOpenRoom(room.id)}>방으로 이동</Button>
+      </div>
+    </Sheet>
+  );
+}
+
+function JoinRoomSheet({
+  open,
+  onClose,
+  onPreview,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPreview: (invite: string) => Promise<
+    | { ok: true; data: InvitePreview }
+    | { ok: false; message: string }
+  >;
+  onSubmit: (values: JoinRoomFormValues) => Promise<{ ok: boolean; message: string }>;
+}) {
+  const formId = 'join-room-form';
+  const [invite, setInvite] = useState('');
+  const [message, setMessage] = useState('');
+  const [preview, setPreview] = useState<InvitePreview | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+
+  const handlePreview = async () => {
+    setMessage('');
+    setPreview(null);
+    setIsPreviewing(true);
+
+    const result = await onPreview(invite);
+
+    if (result.ok) {
+      setPreview(result.data);
+    } else {
+      setMessage(result.message);
+    }
+
+    setIsPreviewing(false);
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage('');
+
+    const formData = new FormData(event.currentTarget);
+    const result = await onSubmit({
+      invite: String(formData.get('invite') ?? ''),
+      nickname: String(formData.get('nickname') ?? ''),
+    });
+
+    if (!result.ok) {
+      setMessage(result.message);
+    }
+  };
+
+  return (
+    <Sheet
+      open={open}
+      title="스케줄링 방 참여"
+      description="초대 코드 또는 링크를 입력하세요."
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+          <Button type="submit" form={formId}>방 참여하기</Button>
+        </div>
+      }
+    >
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        <Field
+          label="초대 코드 또는 링크"
+          name="invite"
+          value={invite}
+          onChange={(event) => {
+            setInvite(event.target.value);
+            setPreview(null);
+            setMessage('');
+          }}
+          placeholder="A7K9-D2"
+          required
+        />
+        <Button type="button" variant="outline" className="w-full" onClick={handlePreview} disabled={!invite.trim() || isPreviewing}>
+          {isPreviewing ? '코드 확인 중' : '코드 확인'}
+        </Button>
+        {preview ? (
+          <Card>
+            <p className="font-black text-gray-950">{preview.name}</p>
+            <p className="mt-1 text-sm text-gray-500">{preview.description ?? '방 설명이 없습니다.'}</p>
+            <p className="mt-2 text-xs font-semibold text-gray-500">
+              방장: {preview.ownerNickname} · 참여자 {preview.memberCount}명
+            </p>
+          </Card>
+        ) : null}
+        <Field label="방에서 사용할 닉네임" name="nickname" placeholder="민수" required />
+        {message ? <p className="text-xs font-semibold text-app-danger">{message}</p> : null}
+      </form>
+    </Sheet>
+  );
+}
+
+function RoomMenuSheet({
+  open,
+  room,
+  profile,
+  onClose,
+  onScheduleAdd,
+  onParticipants,
+  onTransfer,
+  onManagement,
+  onInvite,
+  onInfo,
+  onDelete,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  profile: Profile;
+  onClose: () => void;
+  onScheduleAdd: () => void;
+  onParticipants: () => void;
+  onTransfer: () => void;
+  onManagement: () => void;
+  onInvite: () => void;
+  onInfo: () => void;
+  onDelete: () => void;
+}) {
+  const myMember = getMyMember(room, profile);
+  const owner = room.members.find((member) => member.role === 'owner');
+  const isOwner = myMember?.role === 'owner';
+  const isManager = myMember?.role === 'manager';
+
+  const items = [
+    ...(isOwner || isManager ? [{ label: '새 일정 추가', icon: CalendarPlus, onClick: onScheduleAdd }] : []),
+    { label: '참여자 목록', icon: UsersRound, onClick: onParticipants },
+    ...(isOwner ? [{ label: '참여자 및 권한 관리', icon: Shield, onClick: onParticipants }] : []),
+    ...(isOwner ? [{ label: '방 일정 관리', icon: CalendarPlus, onClick: onManagement }] : []),
+    ...(isOwner ? [{ label: '방장 위임', icon: Crown, onClick: onTransfer }] : []),
+    ...(isOwner ? [{ label: '방 설정', icon: Settings, onClick: onInfo }] : []),
+    ...(isOwner ? [{ label: '초대 정보', icon: KeyRound, onClick: onInvite }] : []),
+    ...(isOwner ? [{ label: '방 삭제', icon: Trash2, onClick: onDelete, danger: true }] : []),
+    ...(!isOwner ? [{ label: '방 정보', icon: Settings, onClick: onInfo }] : []),
+    ...(!isOwner ? [{ label: '내 권한 보기', icon: Shield, onClick: onInfo }] : []),
+  ];
+
+  return (
+    <Sheet open={open} title={`방 기능 - ${myMember ? roomRoleLabels[myMember.role] : '참여자'}`} onClose={onClose}>
+      <Card className="mb-4">
+        <p className="font-black text-gray-950">{room.name}</p>
+        <p className="mt-1 text-sm text-gray-500">내 닉네임: {myMember?.nickname}</p>
+        <p className="mt-1 text-sm text-gray-500">방장: {owner?.nickname}</p>
+      </Card>
+      <div className="space-y-3">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.label}
+              type="button"
+              className="flex min-h-14 w-full items-center justify-between rounded-2xl border border-app-border bg-white px-4 text-left font-bold text-gray-900"
+              onClick={item.onClick}
+            >
+              <span className={cn('flex items-center gap-3', item.danger && 'text-app-danger')}>
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </span>
+              <span className="text-gray-300">›</span>
+            </button>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
+
+function ScheduleFormSheet({
+  open,
+  room,
+  schedule,
+  currentUser,
+  task,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  schedule: Schedule | null;
+  currentUser: Profile;
+  task: PreliminaryTask | null;
+  onClose: () => void;
+  onSubmit: (values: ScheduleFormValues) => void;
+}) {
+  const formId = `schedule-form-${room.id}`;
+  const currentMember = getMyMember(room, currentUser) ?? room.members[0];
+  const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : '2026-07-02';
+  const defaultStartTime = schedule ? format(new Date(schedule.startAt), 'HH:mm') : '14:30';
+  const defaultEndTime = schedule ? format(new Date(schedule.endAt), 'HH:mm') : '16:30';
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const formData = new FormData(event.currentTarget);
+    const values: ScheduleFormValues = {
+      title: String(formData.get('title') ?? ''),
+      participantMemberIds: formData.getAll('participantMemberIds').map(String),
+      date: String(formData.get('date') ?? ''),
+      startTime: String(formData.get('startTime') ?? ''),
+      endTime: String(formData.get('endTime') ?? ''),
+      address: String(formData.get('address') ?? ''),
+      customerPhone: String(formData.get('customerPhone') ?? ''),
+      estimatedPrice: String(formData.get('estimatedPrice') ?? ''),
+      additionalInfo: String(formData.get('additionalInfo') ?? ''),
+    };
+
+    const startAt = new Date(`${values.date}T${values.startTime}:00+09:00`);
+    const endAt = new Date(`${values.date}T${values.endTime}:00+09:00`);
+    const endTimeInput = event.currentTarget.elements.namedItem('endTime') as HTMLInputElement | null;
+
+    if (endAt <= startAt) {
+      endTimeInput?.setCustomValidity('종료 시간은 시작 시간보다 늦어야 합니다.');
+      event.currentTarget.reportValidity();
+      return;
+    }
+
+    endTimeInput?.setCustomValidity('');
+    onSubmit(values);
+  };
+
+  return (
+    <Sheet
+      open={open}
+      title={schedule ? '일정 수정' : '일정 추가'}
+      description="참여자 1명은 개인 일정, 2명 이상은 공동 일정으로 등록됩니다."
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+          <Button type="submit" form={formId}>{schedule ? '수정 저장' : '일정 저장'}</Button>
+        </div>
+      }
+    >
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        <Field label="일정 이름" name="title" defaultValue={schedule?.title ?? task?.title ?? ''} placeholder="에어컨 청소" required />
+        <div>
+          <p className="mb-2 text-xs font-semibold text-gray-700">참여자</p>
+          <div className="flex flex-wrap gap-2">
+            {room.members.map((member, index) => (
+              <label key={member.id} className="flex min-h-11 items-center gap-2 rounded-full border border-app-border px-3 text-sm font-bold">
+                <input
+                  type="checkbox"
+                  name="participantMemberIds"
+                  value={member.id}
+                  defaultChecked={schedule ? schedule.participantMemberIds.includes(member.id) : member.id === currentMember?.id || index === 0}
+                />
+                {member.nickname}
+              </label>
+            ))}
+          </div>
+        </div>
+        <Field label="날짜" name="date" type="date" defaultValue={defaultDate} required />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="시작 시간" name="startTime" type="time" step={1800} defaultValue={defaultStartTime} required />
+          <Field label="종료 시간" name="endTime" type="time" step={1800} defaultValue={defaultEndTime} required />
+        </div>
+        <Field label="주소" name="address" defaultValue={schedule?.address ?? ''} placeholder="천안시" />
+        <Field label="고객 전화번호" name="customerPhone" defaultValue={schedule?.customerPhone ?? ''} placeholder="010-1234-5678" />
+        <Field label="예상 비용" name="estimatedPrice" type="number" defaultValue={schedule?.estimatedPrice?.toString() ?? ''} placeholder="180000" />
+        <TextareaField label="추가 정보" name="additionalInfo" defaultValue={schedule?.additionalInfo ?? task?.memo ?? ''} placeholder="추가 정보를 입력하세요" />
+      </form>
+    </Sheet>
+  );
+}
+
+function ScheduleDetailSheet({
+  open,
+  schedule,
+  room,
+  profile,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  open: boolean;
+  schedule: Schedule | null;
+  room: SchedulingRoom;
+  profile: Profile;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  if (!schedule) {
+    return null;
+  }
+
+  const participants = getScheduleParticipants(room, schedule);
+  const myMember = getMyMember(room, profile);
+  const canManage = roleCanManageSchedules(myMember);
+  const creator = room.members.find((member) => member.id === schedule.createdByMemberId);
+
+  return (
+    <Sheet open={open} title="일정 상세" onClose={onClose}>
+      <div className="space-y-4">
+        <Card>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <StatusBadge status={schedule.status} />
+              <h2 className="mt-3 text-xl font-black text-gray-950">{schedule.title}</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                {format(new Date(schedule.startAt), 'M월 d일 HH:mm')} - {format(new Date(schedule.endAt), 'HH:mm')}
+              </p>
+            </div>
+            <ParticipantAvatarGroup members={participants} />
+          </div>
+        </Card>
+        <상세
+          label="일정 시간"
+          value={`${format(new Date(schedule.startAt), 'yyyy년 M월 d일 HH:mm')} - ${format(new Date(schedule.endAt), 'HH:mm')}`}
+        />
+        <상세 label="참여자" value={participants.map((member) => member.nickname).join(', ')} />
+        <상세 label="주소" value={schedule.address ?? '-'} />
+        <상세 label="고객 전화번호" value={schedule.customerPhone ?? '-'} />
+        <상세 label="예상 비용" value={formatCurrency(schedule.estimatedPrice)} />
+        <상세 label="추가 정보" value={schedule.additionalInfo ?? '-'} />
+        <상세 label="등록자" value={creator?.nickname ?? '-'} />
+        <상세 label="마지막 수정" value={format(new Date(schedule.updatedAt), 'yyyy-MM-dd HH:mm')} />
+        {canManage ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Button type="button" variant="outline" onClick={onEdit}>수정</Button>
+            <Button type="button" variant="danger" onClick={onDelete}>삭제</Button>
+          </div>
+        ) : (
+          <Button type="button" variant="outline" className="w-full" onClick={onClose}>닫기</Button>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+function 상세({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-gray-50 p-3">
+      <p className="text-xs font-bold text-gray-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-gray-800">{value}</p>
+    </div>
+  );
+}
+
+function ParticipantManagementSheet({
+  open,
+  room,
+  onClose,
+  onTransfer,
+  onRoleChange,
+  onKick,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  onClose: () => void;
+  onTransfer: () => void;
+  onRoleChange: (memberId: string, role: RoomMember['role']) => void;
+  onKick: (memberId: string) => void;
+}) {
+  return (
+    <Sheet open={open} title="참여자 및 권한 관리" onClose={onClose}>
+      <div className="space-y-3">
+        {room.members.map((member) => (
+          <Card key={member.id}>
+            <div className="flex items-start gap-3">
+              <ParticipantAvatar member={member} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-black text-gray-950">{member.nickname}</p>
+                  <RoleBadge role={member.role} />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{member.email}</p>
+                <p className="mt-1 text-xs text-gray-400">참여일 {format(new Date(member.joinedAt), 'yyyy-MM-dd')}</p>
+              </div>
+            </div>
+            {member.role !== 'owner' ? (
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRoleChange(member.id, member.role === 'manager' ? 'member' : 'manager')}
+                >
+                  {member.role === 'manager' ? '해제' : '부여'} 매니저
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={onTransfer}>위임</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => onKick(member.id)}>내보내기</Button>
+              </div>
+            ) : null}
+          </Card>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+function TransferOwnershipSheet({
+  open,
+  room,
+  checked,
+  onCheckedChange,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  onConfirm: (memberId: string) => void;
+  onClose: () => void;
+}) {
+  const current방장 = room.members.find((member) => member.role === 'owner');
+  const candidates = room.members.filter((member) => member.role !== 'owner');
+  const [targetMemberId, setTargetMemberId] = useState(candidates[0]?.id ?? '');
+  const target = room.members.find((member) => member.id === targetMemberId);
+
+  return (
+    <Sheet
+      open={open}
+      title="방장 위임"
+      description="위임 후 현재 방장은 매니저로 변경됩니다."
+      onClose={onClose}
+      footer={
+        <Button type="button" className="w-full" disabled={!checked || !targetMemberId} onClick={() => onConfirm(targetMemberId)}>
+          방장 위임
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <상세 label="현재 방장" value={current방장?.nickname ?? '-'} />
+        <label className="block">
+          <span className="mb-2 block text-xs font-semibold text-gray-700">새 방장</span>
+          <select
+            value={targetMemberId}
+            onChange={(event) => setTargetMemberId(event.target.value)}
+            className="h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+          >
+            {candidates.length > 0 ? (
+              candidates.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.nickname} · {roomRoleLabels[member.role]}
+                </option>
+              ))
+            ) : (
+              <option value="">위임할 참여자가 없습니다</option>
+            )}
+          </select>
+        </label>
+        <상세 label="새 방장 미리보기" value={target?.nickname ?? '참여자를 선택하세요'} />
+        <상세 label="위임 후 권한" value="현재 방장: 매니저 · 새 방장: 방장" />
+        <label className="flex items-start gap-3 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+          <input type="checkbox" className="mt-1" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} />
+          방장 권한이 이전되는 것을 확인했습니다.
+        </label>
+      </div>
+    </Sheet>
+  );
+}
+
+function RoomScheduleManagementSheet({
+  open,
+  room,
+  schedules,
+  onClose,
+  onOpenSchedule,
+  onEditSchedule,
+  onDeleteSchedule,
+  onStatusChange,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  schedules: Schedule[];
+  onClose: () => void;
+  onOpenSchedule: (schedule: Schedule) => void;
+  onEditSchedule: (schedule: Schedule) => void;
+  onDeleteSchedule: (scheduleId: string) => void;
+  onStatusChange: (scheduleId: string, status: Schedule['status']) => void;
+}) {
+  const completed = schedules.filter((schedule) => schedule.status === 'completed').length;
+
+  return (
+    <Sheet open={open} title="방 일정 관리" description="현재 방의 일정만 표시됩니다." onClose={onClose}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Stat label="전체" value={schedules.length} />
+          <Stat label="완료" value={completed} />
+        </div>
+        <Field label="검색" placeholder="일정 검색" />
+        <div className="space-y-3">
+          {schedules.map((schedule) => (
+            <Card key={schedule.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-black text-gray-950">{schedule.title}</p>
+                  <p className="mt-1 text-xs text-gray-500">{format(new Date(schedule.startAt), 'yyyy-MM-dd HH:mm')}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {getScheduleParticipants(room, schedule).map((member) => member.nickname).join(', ')}
+                  </p>
+                </div>
+                <StatusBadge status={schedule.status} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => onOpenSchedule(schedule)}>상세</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => onEditSchedule(schedule)}>수정</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onStatusChange(schedule.id, schedule.status === 'completed' ? 'scheduled' : 'completed')}
+                >
+                  {schedule.status === 'completed' ? '예정으로 변경' : '완료 처리'}
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => onDeleteSchedule(schedule.id)}>삭제</Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function PreliminaryTaskSheet({
+  open,
+  rooms,
+  task,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  rooms: SchedulingRoom[];
+  task: PreliminaryTask | null;
+  onClose: () => void;
+  onSubmit: (values: PreliminaryTaskFormValues) => Promise<void>;
+}) {
+  const formId = 'preliminary-task-form';
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const formData = new FormData(event.currentTarget);
+    const priority = String(formData.get('priority') ?? 'normal');
+
+    await onSubmit({
+      title: String(formData.get('title') ?? ''),
+      memo: String(formData.get('memo') ?? ''),
+      priority: priority === 'high' || priority === 'low' ? priority : 'normal',
+      roomId: String(formData.get('roomId') ?? 'none'),
+      dueDate: String(formData.get('dueDate') ?? ''),
+    });
+  };
+
+  return (
+    <Sheet
+      open={open}
+      title={task ? '예비 할 일 수정' : '예비 할 일 추가'}
+      description="일정으로 확정하기 전의 개인 할 일을 등록하세요."
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+          <Button type="submit" form={formId}>{task ? '수정 저장' : '저장'}</Button>
+        </div>
+      }
+    >
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        <Field label="할 일 제목" name="title" defaultValue={task?.title ?? ''} placeholder="고객 견적 준비" required />
+        <TextareaField label="메모" name="memo" defaultValue={task?.memo ?? ''} placeholder="메모를 입력하세요" />
+        <label className="block">
+          <span className="mb-2 block text-xs font-semibold text-gray-700">관련 방</span>
+          <select
+            name="roomId"
+            defaultValue={task?.roomId ?? 'none'}
+            className="h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+          >
+            <option value="none">연결된 방 없음</option>
+            {rooms.map((room) => (
+              <option key={room.id} value={room.id}>
+                {room.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div>
+          <p className="mb-2 text-xs font-semibold text-gray-700">중요도</p>
+          <div className="grid grid-cols-3 gap-2">
+            {(['low', 'normal', 'high'] as const).map((priority) => (
+              <label key={priority} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-app-border bg-white text-sm font-bold text-gray-700">
+                <input type="radio" name="priority" value={priority} defaultChecked={(task?.priority ?? 'normal') === priority} />
+                {priority === 'low' ? '낮음' : priority === 'normal' ? '보통' : '높음'}
+              </label>
+            ))}
+          </div>
+        </div>
+        <Field label="예정일" name="dueDate" type="date" defaultValue={task?.dueDate ?? ''} />
+      </form>
+    </Sheet>
+  );
+}
+
+function AdminAddUserSheet({
+  open,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (values: AdminUserFormValues) => Promise<{ ok: boolean; message: string }>;
+}) {
+  const formId = 'admin-add-user-form';
+  const [role, setRole] = useState<'user' | 'admin'>('user');
+  const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage('');
+    setIsSubmitting(true);
+
+    const formData = new FormData(event.currentTarget);
+    const result = await onSubmit({
+      loginId: String(formData.get('loginId') ?? ''),
+      email: String(formData.get('email') ?? ''),
+      password: String(formData.get('password') ?? ''),
+      passwordConfirm: String(formData.get('passwordConfirm') ?? ''),
+      name: String(formData.get('name') ?? ''),
+      phone: String(formData.get('phone') ?? ''),
+      isServiceAdmin: role === 'admin',
+    });
+
+    if (!result.ok) {
+      setMessage(result.message);
+    }
+
+    setIsSubmitting(false);
+  };
+
+  return (
+    <Sheet
+      open={open}
+      title="계정 추가"
+      description="서버 전용 관리자 API로 서비스 계정을 생성합니다."
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>취소</Button>
+          <Button type="submit" form={formId} disabled={isSubmitting}>{isSubmitting ? '생성 중' : '계정 생성'}</Button>
+        </div>
+      }
+    >
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        <Field label="로그인 아이디" name="loginId" placeholder="user01" required />
+        <Field label="이메일" name="email" type="email" placeholder="선택 입력 이메일" />
+        <Field label="초기 비밀번호" name="password" type="password" placeholder="12자 이상, 대소문자·숫자·특수문자 포함" required />
+        <Field label="비밀번호 확인" name="passwordConfirm" type="password" required />
+        <Field label="이름" name="name" placeholder="김민수" required />
+        <Field label="전화번호" name="phone" placeholder="010-0000-0000" />
+        <div className="grid grid-cols-2 gap-3">
+          <Button type="button" variant={role === 'user' ? 'secondary' : 'outline'} onClick={() => setRole('user')}>일반 사용자</Button>
+          <Button type="button" variant={role === 'admin' ? 'secondary' : 'outline'} onClick={() => setRole('admin')}>서비스 관리자</Button>
+        </div>
+        {message ? <p className="text-xs font-semibold text-app-danger">{message}</p> : null}
+      </form>
+    </Sheet>
+  );
+}
+
+function InviteInfoSheet({
+  open,
+  room,
+  onClose,
+  onRegenerate,
+}: {
+  open: boolean;
+  room: SchedulingRoom;
+  onClose: () => void;
+  onRegenerate: () => void;
+}) {
+  const [message, setMessage] = useState('');
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(room.inviteCode);
+      setMessage('초대 코드를 복사했습니다.');
+    } catch {
+      setMessage('복사하지 못했습니다. 코드를 직접 선택해주세요.');
+    }
+  };
+
+  return (
+    <Sheet open={open} title="초대 정보" onClose={onClose}>
+      <Card className="space-y-3">
+        <p className="text-xs font-bold text-gray-400">초대 코드</p>
+        <button type="button" className="flex w-full items-center justify-between rounded-xl bg-gray-50 p-3 text-left" onClick={copyCode}>
+          <span className="font-black text-gray-950">{room.inviteCode}</span>
+          <Copy className="h-4 w-4 text-app-blue" />
+        </button>
+        <Button type="button" className="w-full" onClick={onRegenerate}>초대 코드 재생성</Button>
+        {message ? <p className="text-xs font-semibold text-app-blue">{message}</p> : null}
+      </Card>
+    </Sheet>
+  );
+}
+
+function RoomInfoSheet({ open, room, onClose }: { open: boolean; room: SchedulingRoom; onClose: () => void }) {
+  return (
+    <Sheet open={open} title="방 정보" onClose={onClose}>
+      <div className="space-y-4">
+        <상세 label="방" value={room.name} />
+        <상세 label="설명" value={room.description ?? '-'} />
+        <상세 label="업무 시간" value={`${room.businessStartTime} - ${room.businessEndTime}`} />
+        <상세 label="참여자" value={`${room.members.length}`} />
+      </div>
+    </Sheet>
+  );
+}
