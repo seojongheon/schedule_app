@@ -59,10 +59,17 @@ export function ScheduleCalendar({
   const [calendarDate, setCalendarDate] = useState(() => new Date('2026-07-02T09:00:00+09:00'));
   const weekDragStart = useRef({ x: 0, y: 0 });
   const weekDragPointerId = useRef<number | null>(null);
+  const weekSlideTimeout = useRef<number | null>(null);
   const didSwipeWeek = useRef(false);
+  const [weekDragOffsetX, setWeekDragOffsetX] = useState(0);
+  const [weekSlidePercent, setWeekSlidePercent] = useState(-33.333333);
+  const [isWeekDragging, setIsWeekDragging] = useState(false);
+  const [isWeekAnimating, setIsWeekAnimating] = useState(false);
   const weekStart = startOfWeek(calendarDate, { weekStartsOn: 1 });
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date('2026-07-02T09:00:00+09:00')));
+  const previousWeekDays = Array.from({ length: 7 }, (_, index) => addDays(addWeeks(weekStart, -1), index));
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const nextWeekDays = Array.from({ length: 7 }, (_, index) => addDays(addWeeks(weekStart, 1), index));
   const monthStart = startOfMonth(calendarDate);
   const monthEnd = endOfMonth(calendarDate);
   const monthGridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -94,10 +101,25 @@ export function ScheduleCalendar({
   };
 
   const handleWeekPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (isWeekAnimating) {
+      return;
+    }
+
     weekDragPointerId.current = event.pointerId;
     weekDragStart.current = { x: event.clientX, y: event.clientY };
     didSwipeWeek.current = false;
+    setIsWeekDragging(true);
+    setWeekDragOffsetX(0);
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleWeekPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (weekDragPointerId.current !== event.pointerId || isWeekAnimating) {
+      return;
+    }
+
+    const deltaX = event.clientX - weekDragStart.current.x;
+    setWeekDragOffsetX(deltaX);
   };
 
   const handleWeekPointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -111,19 +133,37 @@ export function ScheduleCalendar({
     const deltaY = event.clientY - weekDragStart.current.y;
 
     if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) {
+      setIsWeekDragging(false);
+      setWeekDragOffsetX(0);
       return;
     }
 
+    const direction = deltaX < 0 ? 1 : -1;
+
     didSwipeWeek.current = true;
-    moveCalendar(deltaX < 0 ? 1 : -1);
-    window.setTimeout(() => {
+    setIsWeekDragging(false);
+    setIsWeekAnimating(true);
+    setWeekDragOffsetX(0);
+    setWeekSlidePercent(direction === 1 ? -66.666667 : 0);
+
+    if (weekSlideTimeout.current) {
+      window.clearTimeout(weekSlideTimeout.current);
+    }
+
+    weekSlideTimeout.current = window.setTimeout(() => {
+      moveCalendar(direction);
+      setIsWeekAnimating(false);
+      setWeekSlidePercent(-33.333333);
       didSwipeWeek.current = false;
-    }, 0);
+      weekSlideTimeout.current = null;
+    }, 220);
   };
 
   const handleWeekPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
     if (weekDragPointerId.current === event.pointerId) {
       weekDragPointerId.current = null;
+      setIsWeekDragging(false);
+      setWeekDragOffsetX(0);
     }
   };
 
@@ -134,6 +174,14 @@ export function ScheduleCalendar({
     const intervalId = window.setInterval(updateCurrentTime, 60_000);
 
     return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (weekSlideTimeout.current) {
+        window.clearTimeout(weekSlideTimeout.current);
+      }
+    };
   }, []);
 
   const hourRows = useMemo(() => {
@@ -187,6 +235,72 @@ export function ScheduleCalendar({
   const weekDateKeys = useMemo(() => new Set(days.map((day) => dateKey(day))), [days]);
   const selectedDaySchedules = schedules.filter((schedule) => dateKey(schedule.startAt) === selectedDateKey);
   const selectedDate = new Date(`${selectedDateKey}T09:00:00+09:00`);
+  const renderWeekDays = (weekDays: Date[]) => weekDays.map((day) => {
+    const key = dateKey(day);
+    const daySchedules = schedulesByDate[key] ?? [];
+    const isToday = key === todayKey;
+    const isSelected = key === selectedDateKey;
+
+    return (
+      <button
+        key={day.toISOString()}
+        type="button"
+        className={cn(
+          'flex min-h-24 flex-col rounded-2xl px-1 py-2 text-center transition',
+          isSelected ? 'bg-app-blueSoft ring-2 ring-app-blue/30' : 'bg-gray-50',
+        )}
+        onClick={() => {
+          if (didSwipeWeek.current) {
+            didSwipeWeek.current = false;
+            return;
+          }
+
+          setSelectedDateKey(key);
+        }}
+      >
+        <div className="h-11 shrink-0">
+          <p className="text-[10px] font-bold uppercase text-gray-400">
+            {['월', '화', '수', '목', '금', '토', '일'][day.getDay() === 0 ? 6 : day.getDay() - 1]}
+          </p>
+          <p
+            className={cn(
+              'mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-black',
+              isToday ? 'bg-app-blue text-white' : 'text-gray-700',
+              isSelected && !isToday && 'bg-white text-app-blue',
+            )}
+          >
+            {format(day, 'd')}
+          </p>
+        </div>
+        <div className="mt-1 min-h-11 flex-1 space-y-1">
+          {daySchedules.slice(0, 2).map((schedule) => {
+            const participants = room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
+            const isShared = participants.length > 1;
+            const primaryColor = isShared ? room.sharedScheduleColor : participants[0]?.color ?? room.color;
+            const highlighted = isHighlighted(schedule);
+
+            return (
+              <span
+                key={schedule.id}
+                className={cn(
+                  'block h-5 w-full truncate rounded px-1 text-left text-[10px] font-bold',
+                  !highlighted && 'opacity-25',
+                )}
+                style={{ backgroundColor: `${primaryColor}18`, color: primaryColor }}
+              >
+                {schedule.title}
+              </span>
+            );
+          })}
+          {daySchedules.length > 2 ? (
+            <span className="block truncate px-1 text-left text-[10px] font-bold text-gray-400">
+              +{daySchedules.length - 2}개
+            </span>
+          ) : null}
+        </div>
+      </button>
+    );
+  });
 
   return (
     <div className="space-y-4">
@@ -264,76 +378,23 @@ export function ScheduleCalendar({
         ) : null}
         {view === 'week' ? (
           <div
-            className="grid touch-pan-y grid-cols-7 gap-1"
+            className="overflow-hidden"
             onPointerDown={handleWeekPointerDown}
+            onPointerMove={handleWeekPointerMove}
             onPointerUp={handleWeekPointerUp}
             onPointerCancel={handleWeekPointerCancel}
           >
-            {days.map((day) => {
-              const key = dateKey(day);
-              const daySchedules = schedulesByDate[key] ?? [];
-              const isToday = key === todayKey;
-              const isSelected = key === selectedDateKey;
-              return (
-                <button
-                  key={day.toISOString()}
-                  type="button"
-                  className={cn(
-                    'flex min-h-24 flex-col rounded-2xl px-1 py-2 text-center transition',
-                    isSelected ? 'bg-app-blueSoft ring-2 ring-app-blue/30' : 'bg-gray-50',
-                  )}
-                  onClick={() => {
-                    if (didSwipeWeek.current) {
-                      didSwipeWeek.current = false;
-                      return;
-                    }
-
-                    setSelectedDateKey(key);
-                  }}
-                >
-                  <div className="h-11 shrink-0">
-                    <p className="text-[10px] font-bold uppercase text-gray-400">
-                      {['월', '화', '수', '목', '금', '토', '일'][day.getDay() === 0 ? 6 : day.getDay() - 1]}
-                    </p>
-                    <p
-                      className={cn(
-                        'mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-black',
-                        isToday ? 'bg-app-blue text-white' : 'text-gray-700',
-                        isSelected && !isToday && 'bg-white text-app-blue',
-                      )}
-                    >
-                      {format(day, 'd')}
-                    </p>
-                  </div>
-                  <div className="mt-1 min-h-11 flex-1 space-y-1">
-                    {daySchedules.slice(0, 2).map((schedule) => {
-                      const participants = room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
-                      const isShared = participants.length > 1;
-                      const primaryColor = isShared ? room.sharedScheduleColor : participants[0]?.color ?? room.color;
-                      const highlighted = isHighlighted(schedule);
-
-                      return (
-                        <span
-                          key={schedule.id}
-                          className={cn(
-                            'block h-5 w-full truncate rounded px-1 text-left text-[10px] font-bold',
-                            !highlighted && 'opacity-25',
-                          )}
-                          style={{ backgroundColor: `${primaryColor}18`, color: primaryColor }}
-                        >
-                          {schedule.title}
-                        </span>
-                      );
-                    })}
-                    {daySchedules.length > 2 ? (
-                      <span className="block truncate px-1 text-left text-[10px] font-bold text-gray-400">
-                        +{daySchedules.length - 2}개
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
+            <div
+              className={cn(
+                'flex w-[300%] touch-pan-y',
+                isWeekAnimating ? 'transition-transform duration-200 ease-out' : 'transition-none',
+              )}
+              style={{ transform: `translateX(calc(${weekSlidePercent}% + ${weekDragOffsetX}px))` }}
+            >
+              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(previousWeekDays)}</div>
+              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(days)}</div>
+              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(nextWeekDays)}</div>
+            </div>
           </div>
         ) : null}
       </Card>

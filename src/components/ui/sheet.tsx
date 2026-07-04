@@ -19,23 +19,43 @@ export function Sheet({ open, title, description, children, footer, onClose, cla
   const dragStartY = useRef(0);
   const latestDragY = useRef(0);
   const activePointerId = useRef<number | null>(null);
+  const closeTimeout = useRef<number | null>(null);
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
     if (!open) {
+      if (closeTimeout.current) {
+        window.clearTimeout(closeTimeout.current);
+        closeTimeout.current = null;
+      }
+
       latestDragY.current = 0;
       setDragY(0);
       setIsDragging(false);
+      setIsClosing(false);
       activePointerId.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeout.current) {
+        window.clearTimeout(closeTimeout.current);
+      }
+    };
+  }, []);
 
   if (!open) {
     return null;
   }
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (isClosing) {
+      return;
+    }
+
     activePointerId.current = event.pointerId;
     dragStartY.current = event.clientY - dragY;
     setIsDragging(true);
@@ -43,7 +63,7 @@ export function Sheet({ open, title, description, children, footer, onClose, cla
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!isDragging || activePointerId.current !== event.pointerId) {
+    if (isClosing || !isDragging || activePointerId.current !== event.pointerId) {
       return;
     }
 
@@ -63,7 +83,13 @@ export function Sheet({ open, title, description, children, footer, onClose, cla
     activePointerId.current = null;
 
     if (shouldClose) {
-      onClose();
+      setIsClosing(true);
+      latestDragY.current = window.innerHeight;
+      setDragY(window.innerHeight);
+      closeTimeout.current = window.setTimeout(() => {
+        closeTimeout.current = null;
+        onClose();
+      }, 220);
       return;
     }
 
