@@ -3,7 +3,7 @@ import './globals.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
   ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-const ogImageUrl = new URL('/og.png', siteUrl).toString();
+const ogImageUrl = new URL('/og.jpg', siteUrl).toString();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -26,9 +26,9 @@ export const metadata: Metadata = {
       {
         url: ogImageUrl,
         secureUrl: ogImageUrl,
-        width: 2848,
-        height: 1504,
-        type: 'image/png',
+        width: 1200,
+        height: 630,
+        type: 'image/jpeg',
         alt: '공유 스케줄 서비스 미리보기',
       },
     ],
@@ -41,9 +41,9 @@ export const metadata: Metadata = {
   },
   other: {
     'og:image:secure_url': ogImageUrl,
-    'og:image:type': 'image/png',
-    'og:image:width': '2848',
-    'og:image:height': '1504',
+    'og:image:type': 'image/jpeg',
+    'og:image:width': '1200',
+    'og:image:height': '630',
     'og:locale:alternate': 'ko_KR',
     'twitter:image:alt': '공유 스케줄 서비스 미리보기',
   },
