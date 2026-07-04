@@ -5,7 +5,7 @@ const siteUrl = process.env.NODE_ENV === 'production'
   ? 'https://schedule-app-mmyh.vercel.app'
   : (process.env.NEXT_PUBLIC_SITE_URL
     ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'));
-const ogImageUrl = new URL('/og.jpg', siteUrl).toString();
+const ogImageUrl = new URL('/og-kakao.jpg', siteUrl).toString();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
