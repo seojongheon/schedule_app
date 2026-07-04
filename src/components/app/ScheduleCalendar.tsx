@@ -2,8 +2,8 @@
 
 import { addDays, addMonths, addWeeks, differenceInCalendarDays, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from 'date-fns';
 import { ChevronLeft, ChevronRight, Search, Users } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import type { PointerEvent, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Profile, Schedule, SchedulingRoom } from '@/domain/entities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -57,8 +57,10 @@ export function ScheduleCalendar({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentMinutes, setCurrentMinutes] = useState(getCurrentMinutes);
   const [calendarDate, setCalendarDate] = useState(() => new Date('2026-07-02T09:00:00+09:00'));
+  const weekDragStart = useRef({ x: 0, y: 0 });
+  const weekDragPointerId = useRef<number | null>(null);
+  const didSwipeWeek = useRef(false);
   const weekStart = startOfWeek(calendarDate, { weekStartsOn: 1 });
-  const weekEnd = addDays(weekStart, 6);
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date('2026-07-02T09:00:00+09:00')));
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const monthStart = startOfMonth(calendarDate);
@@ -77,7 +79,7 @@ export function ScheduleCalendar({
   const isCurrentTimeVisible = currentMinutes >= dayStart && currentMinutes < dayEnd;
   const headerTitle = view === 'month'
     ? format(calendarDate, 'yyyy년 M월')
-    : `${format(weekStart, 'yyyy년 M월 d일')} - ${format(weekEnd, 'M월 d일')}`;
+    : format(calendarDate, 'yyyy.M');
 
   const moveCalendar = (direction: -1 | 1) => {
     setCalendarDate((previous) => {
@@ -89,6 +91,40 @@ export function ScheduleCalendar({
 
       return nextDate;
     });
+  };
+
+  const handleWeekPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    weekDragPointerId.current = event.pointerId;
+    weekDragStart.current = { x: event.clientX, y: event.clientY };
+    didSwipeWeek.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleWeekPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (weekDragPointerId.current !== event.pointerId) {
+      return;
+    }
+
+    weekDragPointerId.current = null;
+
+    const deltaX = event.clientX - weekDragStart.current.x;
+    const deltaY = event.clientY - weekDragStart.current.y;
+
+    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) {
+      return;
+    }
+
+    didSwipeWeek.current = true;
+    moveCalendar(deltaX < 0 ? 1 : -1);
+    window.setTimeout(() => {
+      didSwipeWeek.current = false;
+    }, 0);
+  };
+
+  const handleWeekPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (weekDragPointerId.current === event.pointerId) {
+      weekDragPointerId.current = null;
+    }
   };
 
   useEffect(() => {
@@ -227,7 +263,12 @@ export function ScheduleCalendar({
           </div>
         ) : null}
         {view === 'week' ? (
-          <div className="grid grid-cols-7 gap-1">
+          <div
+            className="grid touch-pan-y grid-cols-7 gap-1"
+            onPointerDown={handleWeekPointerDown}
+            onPointerUp={handleWeekPointerUp}
+            onPointerCancel={handleWeekPointerCancel}
+          >
             {days.map((day) => {
               const key = dateKey(day);
               const daySchedules = schedulesByDate[key] ?? [];
@@ -241,7 +282,14 @@ export function ScheduleCalendar({
                     'flex min-h-24 flex-col rounded-2xl px-1 py-2 text-center transition',
                     isSelected ? 'bg-app-blueSoft ring-2 ring-app-blue/30' : 'bg-gray-50',
                   )}
-                  onClick={() => setSelectedDateKey(key)}
+                  onClick={() => {
+                    if (didSwipeWeek.current) {
+                      didSwipeWeek.current = false;
+                      return;
+                    }
+
+                    setSelectedDateKey(key);
+                  }}
                 >
                   <div className="h-11 shrink-0">
                     <p className="text-[10px] font-bold uppercase text-gray-400">
