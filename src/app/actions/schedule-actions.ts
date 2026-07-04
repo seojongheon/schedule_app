@@ -284,7 +284,7 @@ export async function saveScheduleAction(values: {
     }
 
     const scheduleId = String((scheduleResult.data as { id: string }).id);
-    const participantRows = values.participantMemberIds.map((roomMemberId) => ({
+    const participantRows = [...new Set(values.participantMemberIds)].map((roomMemberId) => ({
       schedule_id: scheduleId,
       room_member_id: roomMemberId,
     }));

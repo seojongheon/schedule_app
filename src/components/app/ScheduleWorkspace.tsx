@@ -198,6 +198,34 @@ function getScheduleParticipants(room: SchedulingRoom, schedule: Schedule) {
   return room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
 }
 
+function scheduleIdentity(schedule: Schedule) {
+  return [
+    schedule.roomId,
+    schedule.title.trim(),
+    schedule.startAt,
+    schedule.endAt,
+    schedule.address?.trim() ?? '',
+    schedule.customerPhone?.replace(/[^\d+]/g, '') ?? '',
+    schedule.estimatedPrice ?? '',
+    [...new Set(schedule.participantMemberIds)].sort().join(','),
+  ].join('|');
+}
+
+function uniqueSchedules(schedules: Schedule[]) {
+  const seen = new Set<string>();
+
+  return schedules.filter((schedule) => {
+    const key = scheduleIdentity(schedule);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
 function sanitizePhoneNumber(phone: string | null) {
   return phone?.replace(/[^\d+]/g, '') ?? '';
 }
@@ -442,8 +470,9 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     : selectedTask?.roomId
       ? rooms.find((room) => room.id === selectedTask.roomId) ?? activeRoom
       : activeRoom;
-  const visibleRoomSchedules = schedules.filter((schedule) => schedule.roomId === activeRoom.id);
-  const todaySchedules = schedules
+  const displaySchedules = useMemo(() => uniqueSchedules(schedules), [schedules]);
+  const visibleRoomSchedules = displaySchedules.filter((schedule) => schedule.roomId === activeRoom.id);
+  const todaySchedules = displaySchedules
     .filter((schedule) => {
       const room = rooms.find((candidate) => candidate.id === schedule.roomId);
       const member = room ? getMyMember(room, workspaceProfile) : undefined;
@@ -543,7 +572,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   const addDemoSchedule = async (values: ScheduleFormValues) => {
     const targetRoom = formRoom;
     const member = getMyMember(targetRoom, workspaceProfile) ?? targetRoom.members[0];
-    const participantMemberIds = values.participantMemberIds.length > 0 ? values.participantMemberIds : [member.id];
+    const participantMemberIds = [...new Set(values.participantMemberIds.length > 0 ? values.participantMemberIds : [member.id])];
     const title = values.title.trim() || selectedTask?.title || '새 일정';
     const date = values.date || '2026-07-02';
     const startTime = values.startTime || '14:30';
@@ -590,11 +619,16 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       newSchedule.id = result.data.scheduleId;
     }
 
-    setSchedules((previous) =>
-      selectedSchedule
-        ? previous.map((schedule) => (schedule.id === selectedSchedule.id ? newSchedule : schedule))
-        : [...previous, newSchedule],
-    );
+    setSchedules((previous) => {
+      if (selectedSchedule) {
+        return uniqueSchedules(previous.map((schedule) => (schedule.id === selectedSchedule.id ? newSchedule : schedule)));
+      }
+
+      const newScheduleKey = scheduleIdentity(newSchedule);
+      const alreadyExists = previous.some((schedule) => scheduleIdentity(schedule) === newScheduleKey);
+
+      return alreadyExists ? uniqueSchedules(previous) : uniqueSchedules([...previous, newSchedule]);
+    });
     if (selectedTask) {
       setTasks((previous) => previous.filter((task) => task.id !== selectedTask.id));
     }
@@ -2453,12 +2487,13 @@ function ScheduleFormSheet({
   currentUser: Profile;
   task: PreliminaryTask | null;
   onClose: () => void;
-  onSubmit: (values: ScheduleFormValues) => void;
+  onSubmit: (values: ScheduleFormValues) => Promise<void> | void;
 }) {
   const formId = `schedule-form-${room.id}`;
   const formRef = useRef<HTMLFormElement>(null);
   const [captureText, setCaptureText] = useState('');
   const [captureStatus, setCaptureStatus] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const currentMember = getMyMember(room, currentUser) ?? room.members[0];
   const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   const defaultStartTime = schedule ? format(new Date(schedule.startAt), 'HH:mm') : '14:30';
@@ -2527,8 +2562,12 @@ function ScheduleFormSheet({
     }
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (isSubmitting) {
+      return;
+    }
 
     const formData = new FormData(event.currentTarget);
     const values: ScheduleFormValues = {
@@ -2554,7 +2593,13 @@ function ScheduleFormSheet({
     }
 
     endTimeInput?.setCustomValidity('');
-    onSubmit(values);
+
+    try {
+      setIsSubmitting(true);
+      await onSubmit(values);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2565,8 +2610,8 @@ function ScheduleFormSheet({
       onClose={onClose}
       footer={
         <div className="grid grid-cols-2 gap-3">
-          <Button type="button" variant="outline" onClick={onClose}>취소</Button>
-          <Button type="submit" form={formId}>{schedule ? '수정 저장' : '일정 저장'}</Button>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>취소</Button>
+          <Button type="submit" form={formId} disabled={isSubmitting}>{isSubmitting ? '저장 중' : schedule ? '수정 저장' : '일정 저장'}</Button>
         </div>
       }
     >
