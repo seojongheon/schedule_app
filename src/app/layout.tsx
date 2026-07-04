@@ -3,6 +3,7 @@ import './globals.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
   ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+const ogImageUrl = new URL('/og.png', siteUrl).toString();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -11,6 +12,9 @@ export const metadata: Metadata = {
     default: '공유 스케줄',
   },
   description: '여러 스케줄링 방의 일정을 함께 관리하는 공유 일정 서비스입니다.',
+  alternates: {
+    canonical: '/',
+  },
   openGraph: {
     title: '공유 스케줄',
     description: '여러 스케줄링 방의 일정을 함께 관리하는 공유 일정 서비스입니다.',
@@ -20,9 +24,11 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: '/og.png',
+        url: ogImageUrl,
+        secureUrl: ogImageUrl,
         width: 2848,
         height: 1504,
+        type: 'image/png',
         alt: '공유 스케줄 서비스 미리보기',
       },
     ],
@@ -31,7 +37,15 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: '공유 스케줄',
     description: '여러 스케줄링 방의 일정을 함께 관리하는 공유 일정 서비스입니다.',
-    images: ['/og.png'],
+    images: [ogImageUrl],
+  },
+  other: {
+    'og:image:secure_url': ogImageUrl,
+    'og:image:type': 'image/png',
+    'og:image:width': '2848',
+    'og:image:height': '1504',
+    'og:locale:alternate': 'ko_KR',
+    'twitter:image:alt': '공유 스케줄 서비스 미리보기',
   },
 };
 
