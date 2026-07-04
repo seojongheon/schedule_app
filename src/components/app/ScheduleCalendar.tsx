@@ -56,17 +56,18 @@ export function ScheduleCalendar({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentMinutes, setCurrentMinutes] = useState(getCurrentMinutes);
-  const [calendarDate, setCalendarDate] = useState(() => new Date('2026-07-02T09:00:00+09:00'));
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const weekDragStart = useRef({ x: 0, y: 0 });
   const weekDragPointerId = useRef<number | null>(null);
   const weekSlideTimeout = useRef<number | null>(null);
   const didSwipeWeek = useRef(false);
+  const timeTableRef = useRef<HTMLDivElement>(null);
   const [weekDragOffsetX, setWeekDragOffsetX] = useState(0);
   const [weekSlidePercent, setWeekSlidePercent] = useState(-33.333333);
   const [isWeekDragging, setIsWeekDragging] = useState(false);
   const [isWeekAnimating, setIsWeekAnimating] = useState(false);
   const weekStart = startOfWeek(calendarDate, { weekStartsOn: 1 });
-  const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date('2026-07-02T09:00:00+09:00')));
+  const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date()));
   const previousWeekDays = Array.from({ length: 7 }, (_, index) => addDays(addWeeks(weekStart, -1), index));
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const nextWeekDays = Array.from({ length: 7 }, (_, index) => addDays(addWeeks(weekStart, 1), index));
@@ -233,8 +234,27 @@ export function ScheduleCalendar({
   }, [schedules]);
 
   const weekDateKeys = useMemo(() => new Set(days.map((day) => dateKey(day))), [days]);
-  const selectedDaySchedules = schedules.filter((schedule) => dateKey(schedule.startAt) === selectedDateKey);
+  const selectedDaySchedules = useMemo(
+    () =>
+      schedules
+        .filter((schedule) => dateKey(schedule.startAt) === selectedDateKey)
+        .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    [schedules, selectedDateKey],
+  );
   const selectedDate = new Date(`${selectedDateKey}T09:00:00+09:00`);
+
+  useEffect(() => {
+    if (!timeTableRef.current) {
+      return;
+    }
+
+    const firstSchedule = selectedDaySchedules[0];
+    const targetMinutes = firstSchedule ? Math.max(minutesFromDayStart(firstSchedule.startAt) - 60, dayStart) : dayStart;
+    timeTableRef.current.scrollTo({
+      top: (targetMinutes / totalMinutes) * timeTableRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [dayStart, selectedDateKey, selectedDaySchedules, totalMinutes]);
   const renderWeekDays = (weekDays: Date[]) => weekDays.map((day) => {
     const key = dateKey(day);
     const daySchedules = schedulesByDate[key] ?? [];
@@ -492,7 +512,7 @@ export function ScheduleCalendar({
             </div>
           </div>
         </div>
-        <div className={cn('relative overflow-y-auto bg-white', compact ? 'h-[420px]' : 'h-[1344px]')}>
+        <div ref={timeTableRef} className={cn('relative overflow-y-auto bg-white', compact ? 'h-[420px]' : 'h-[1344px]')}>
           {hourRows.map((minutes) => (
             <div
               key={minutes}

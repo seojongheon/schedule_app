@@ -5,8 +5,13 @@ import {
   CalendarPlus,
   Copy,
   Crown,
+  ImagePlus,
   KeyRound,
+  MapPinned,
+  MessageCircle,
   MoreVertical,
+  Navigation,
+  Phone,
   Plus,
   Search,
   Settings,
@@ -17,8 +22,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import type { ChangeEvent, FormEvent, ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
   createPreliminaryTaskAction,
@@ -191,6 +196,123 @@ function getMyMember(room: SchedulingRoom, profile: Profile) {
 
 function getScheduleParticipants(room: SchedulingRoom, schedule: Schedule) {
   return room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
+}
+
+function sanitizePhoneNumber(phone: string | null) {
+  return phone?.replace(/[^\d+]/g, '') ?? '';
+}
+
+function formatPhoneForDisplay(phone: string | null) {
+  return phone?.trim() || '-';
+}
+
+function buildNavigationUrls(address: string) {
+  const encodedAddress = encodeURIComponent(address);
+
+  return {
+    kakao: `https://map.kakao.com/link/search/${encodedAddress}`,
+    naver: `https://map.naver.com/p/search/${encodedAddress}`,
+    google: `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`,
+  };
+}
+
+function buildGoogleCalendarUrl(schedule: Schedule) {
+  const formatGoogleDate = (dateValue: string) =>
+    new Date(dateValue).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: schedule.title,
+    dates: `${formatGoogleDate(schedule.startAt)}/${formatGoogleDate(schedule.endAt)}`,
+  });
+
+  if (schedule.address) {
+    params.set('location', schedule.address);
+  }
+
+  if (schedule.additionalInfo) {
+    params.set('details', schedule.additionalInfo);
+  }
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function normalizePrice(value: string) {
+  const manWonMatch = value.match(/(\d[\d,.\s]*)\s*만\s*원?/);
+
+  if (manWonMatch) {
+    return String(Math.round(Number(manWonMatch[1].replace(/[,\s]/g, '')) * 10000));
+  }
+
+  const wonMatch = value.match(/(\d[\d,\s]{3,})\s*원?/);
+  return wonMatch ? wonMatch[1].replace(/[,\s]/g, '') : '';
+}
+
+function normalizeTimeLabel(value: string, meridiem?: string) {
+  const match = value.match(/(\d{1,2})(?::|시)?\s*(\d{1,2})?/);
+
+  if (!match) {
+    return '';
+  }
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? '0');
+
+  if (meridiem === '오후' && hour < 12) {
+    hour += 12;
+  }
+
+  if (meridiem === '오전' && hour === 12) {
+    hour = 0;
+  }
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function parseScheduleText(sourceText: string) {
+  const text = sourceText.replace(/\r/g, '\n').trim();
+  const currentYear = new Date().getFullYear();
+  const parsed: Partial<ScheduleFormValues> = {};
+  const phoneMatch = text.match(/(?:\+82[-\s]?)?0?1[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/);
+  const dateMatch =
+    text.match(/(20\d{2})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/) ??
+    text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?/);
+  const timeRangeMatch = text.match(/(오전|오후)?\s*(\d{1,2}(?::|시)\s*\d{0,2})\s*(?:~|-|부터|에서)\s*(오전|오후)?\s*(\d{1,2}(?::|시)\s*\d{0,2})/);
+  const singleTimeMatch = text.match(/(오전|오후)?\s*(\d{1,2}(?::|시)\s*\d{0,2})/);
+  const price = normalizePrice(text);
+  const addressLine = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /(시|군|구|동|읍|면|로|길)\s*\d*|아파트|빌라|오피스텔|번지/.test(line) && !/^\d/.test(line));
+
+  if (phoneMatch) {
+    parsed.customerPhone = phoneMatch[0].replace(/[.\s]/g, '-').replace(/-+/g, '-');
+  }
+
+  if (dateMatch) {
+    const year = dateMatch.length === 4 ? Number(dateMatch[1]) : currentYear;
+    const month = dateMatch.length === 4 ? Number(dateMatch[2]) : Number(dateMatch[1]);
+    const day = dateMatch.length === 4 ? Number(dateMatch[3]) : Number(dateMatch[2]);
+    parsed.date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  if (timeRangeMatch) {
+    parsed.startTime = normalizeTimeLabel(timeRangeMatch[2], timeRangeMatch[1]);
+    parsed.endTime = normalizeTimeLabel(timeRangeMatch[4], timeRangeMatch[3] ?? timeRangeMatch[1]);
+  } else if (singleTimeMatch) {
+    parsed.startTime = normalizeTimeLabel(singleTimeMatch[2], singleTimeMatch[1]);
+  }
+
+  if (price) {
+    parsed.estimatedPrice = price;
+  }
+
+  if (addressLine) {
+    parsed.address = addressLine.replace(/^(주소|장소)\s*[:：]\s*/, '');
+  }
+
+  parsed.additionalInfo = text;
+
+  return parsed;
 }
 
 function buildMyCalendarRoom(profile: Profile, rooms: SchedulingRoom[]): SchedulingRoom {
@@ -2334,10 +2456,76 @@ function ScheduleFormSheet({
   onSubmit: (values: ScheduleFormValues) => void;
 }) {
   const formId = `schedule-form-${room.id}`;
+  const formRef = useRef<HTMLFormElement>(null);
+  const [captureText, setCaptureText] = useState('');
+  const [captureStatus, setCaptureStatus] = useState('');
   const currentMember = getMyMember(room, currentUser) ?? room.members[0];
-  const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : '2026-07-02';
+  const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   const defaultStartTime = schedule ? format(new Date(schedule.startAt), 'HH:mm') : '14:30';
   const defaultEndTime = schedule ? format(new Date(schedule.endAt), 'HH:mm') : '16:30';
+
+  const setInputValue = (name: keyof ScheduleFormValues, value?: string) => {
+    if (!value || !formRef.current) {
+      return;
+    }
+
+    const input = formRef.current.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (input) {
+      input.value = value;
+    }
+  };
+
+  const applyParsedScheduleText = (text: string) => {
+    const parsed = parseScheduleText(text);
+
+    setInputValue('date', parsed.date);
+    setInputValue('startTime', parsed.startTime);
+    setInputValue('endTime', parsed.endTime);
+    setInputValue('address', parsed.address);
+    setInputValue('customerPhone', parsed.customerPhone);
+    setInputValue('estimatedPrice', parsed.estimatedPrice);
+    setInputValue('additionalInfo', parsed.additionalInfo);
+
+    const appliedCount = ['date', 'startTime', 'endTime', 'address', 'customerPhone', 'estimatedPrice']
+      .filter((key) => Boolean(parsed[key as keyof ScheduleFormValues])).length;
+
+    setCaptureStatus(
+      appliedCount > 0
+        ? `${appliedCount}개 항목을 자동 입력했습니다.`
+        : '자동으로 찾은 항목이 없습니다. 문자 내용을 조금 더 길게 붙여넣어 주세요.',
+    );
+  };
+
+  const handleImageCapture = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const textDetector = (window as typeof window & {
+      TextDetector?: new () => { detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>> };
+    }).TextDetector;
+
+    if (!textDetector) {
+      setCaptureStatus('이 브라우저는 이미지 글자 인식을 지원하지 않습니다. 캡쳐 속 문자 내용을 아래에 붙여넣으면 자동 입력할 수 있습니다.');
+      return;
+    }
+
+    try {
+      const imageBitmap = await createImageBitmap(file);
+      const detector = new textDetector();
+      const detectedText = (await detector.detect(imageBitmap))
+        .map((item) => item.rawValue)
+        .filter(Boolean)
+        .join('\n');
+
+      setCaptureText(detectedText);
+      applyParsedScheduleText(detectedText);
+    } catch {
+      setCaptureStatus('이미지에서 글자를 읽지 못했습니다. 문자 내용을 붙여넣어 주세요.');
+    }
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2382,7 +2570,34 @@ function ScheduleFormSheet({
         </div>
       }
     >
-      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
+      <form ref={formRef} id={formId} className="space-y-4" onSubmit={handleSubmit}>
+        {!schedule ? (
+          <div className="rounded-2xl border border-app-border bg-gray-50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-400">문자 자동 입력</p>
+                <p className="mt-1 text-sm font-semibold text-gray-800">캡쳐 이미지 또는 문자 내용을 넣으면 주요 항목을 채웁니다.</p>
+              </div>
+              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-semibold text-gray-900 hover:bg-gray-50">
+                <ImagePlus className="h-4 w-4" />
+                캡쳐
+                <input type="file" accept="image/*" className="sr-only" onChange={handleImageCapture} />
+              </label>
+            </div>
+            <textarea
+              value={captureText}
+              onChange={(event) => setCaptureText(event.target.value)}
+              placeholder="문자 내용을 붙여넣기"
+              className="mt-3 min-h-24 w-full rounded-xl border border-app-border bg-white px-3 py-3 text-sm outline-none transition placeholder:text-gray-400 focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+            />
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-gray-500">{captureStatus}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => applyParsedScheduleText(captureText)}>
+                자동 입력
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <Field label="일정 이름" name="title" defaultValue={schedule?.title ?? task?.title ?? ''} placeholder="에어컨 청소" required />
         <div>
           <p className="mb-2 text-xs font-semibold text-gray-700">참여자</p>
@@ -2439,6 +2654,9 @@ function ScheduleDetailSheet({
   const myMember = getMyMember(room, profile);
   const canManage = roleCanManageSchedules(myMember);
   const creator = room.members.find((member) => member.id === schedule.createdByMemberId);
+  const phoneNumber = sanitizePhoneNumber(schedule.customerPhone);
+  const navigationUrls = schedule.address ? buildNavigationUrls(schedule.address) : null;
+  const googleCalendarUrl = buildGoogleCalendarUrl(schedule);
 
   return (
     <Sheet open={open} title="일정 상세" onClose={onClose}>
@@ -2460,12 +2678,55 @@ function ScheduleDetailSheet({
           value={`${format(new Date(schedule.startAt), 'yyyy년 M월 d일 HH:mm')} - ${format(new Date(schedule.endAt), 'HH:mm')}`}
         />
         <상세 label="참여자" value={participants.map((member) => member.nickname).join(', ')} />
-        <상세 label="주소" value={schedule.address ?? '-'} />
-        <상세 label="고객 전화번호" value={schedule.customerPhone ?? '-'} />
+        <상세
+          label="주소"
+          value={schedule.address ?? '-'}
+          action={navigationUrls ? (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <a className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-app-border bg-white px-2 text-xs font-bold text-gray-900" href={navigationUrls.kakao} target="_blank" rel="noreferrer">
+                <MapPinned className="h-3.5 w-3.5" />
+                카카오
+              </a>
+              <a className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-app-border bg-white px-2 text-xs font-bold text-gray-900" href={navigationUrls.naver} target="_blank" rel="noreferrer">
+                <Navigation className="h-3.5 w-3.5" />
+                네이버
+              </a>
+              <a className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-app-border bg-white px-2 text-xs font-bold text-gray-900" href={navigationUrls.google} target="_blank" rel="noreferrer">
+                <MapPinned className="h-3.5 w-3.5" />
+                구글
+              </a>
+            </div>
+          ) : null}
+        />
+        <상세
+          label="고객 전화번호"
+          value={formatPhoneForDisplay(schedule.customerPhone)}
+          action={phoneNumber ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-bold text-gray-900" href={`sms:${phoneNumber}`}>
+                <MessageCircle className="h-4 w-4" />
+                문자
+              </a>
+              <a className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-bold text-gray-900" href={`tel:${phoneNumber}`}>
+                <Phone className="h-4 w-4" />
+                전화
+              </a>
+            </div>
+          ) : null}
+        />
         <상세 label="예상 비용" value={formatCurrency(schedule.estimatedPrice)} />
         <상세 label="추가 정보" value={schedule.additionalInfo ?? '-'} />
         <상세 label="등록자" value={creator?.nickname ?? '-'} />
         <상세 label="마지막 수정" value={format(new Date(schedule.updatedAt), 'yyyy-MM-dd HH:mm')} />
+        <a
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+          href={googleCalendarUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <CalendarPlus className="h-4 w-4" />
+          구글 캘린더에 추가
+        </a>
         {canManage ? (
           <div className="grid grid-cols-2 gap-3">
             <Button type="button" variant="outline" onClick={onEdit}>수정</Button>
@@ -2479,11 +2740,12 @@ function ScheduleDetailSheet({
   );
 }
 
-function 상세({ label, value }: { label: string; value: string }) {
+function 상세({ label, value, action }: { label: string; value: string; action?: ReactNode }) {
   return (
     <div className="rounded-2xl bg-gray-50 p-3">
       <p className="text-xs font-bold text-gray-400">{label}</p>
       <p className="mt-1 text-sm font-semibold text-gray-800">{value}</p>
+      {action}
     </div>
   );
 }
