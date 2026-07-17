@@ -74,8 +74,8 @@
 
 **Purpose**: Produce fresh completion evidence and close specification gaps.
 
-- [ ] T010 Run `npm run test:unit`, `npm run typecheck`, `npm run lint`, and `npm run build`, then confirm every command exits 0 against `specs/001-fix-week-calendar-overflow/quickstart.md`
-- [ ] T011 Verify FR-001 through FR-010 and SC-001 through SC-005 against the implementation and browser evidence, then mark completed entries in `specs/001-fix-week-calendar-overflow/tasks.md`
+- [x] T010 Run `npm run test:unit`, `npm run typecheck`, `npm run lint`, and `npm run build`, then confirm every command exits 0 against `specs/001-fix-week-calendar-overflow/quickstart.md`
+- [x] T011 Verify FR-001 through FR-010 and SC-001 through SC-005 against the implementation and browser evidence, then mark completed entries in `specs/001-fix-week-calendar-overflow/tasks.md`
 
 ---
 
