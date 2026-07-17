@@ -4,6 +4,7 @@
 
 .next
 node_modules
+.worktrees/
 
 *.tsbuildinfo
 npm-debug.log*
