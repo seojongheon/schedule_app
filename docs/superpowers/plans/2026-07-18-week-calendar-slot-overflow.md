@@ -6,7 +6,7 @@
 
 **Architecture:** Move the two-item preview calculation into a framework-independent generic helper and consume it from `ScheduleCalendar`. Keep rendering in the existing component, but apply shrink and overflow constraints at every grid/container/slot boundary. Use Node's built-in test runner for the preview policy and browser measurements for CSS behavior.
 
-**Tech Stack:** TypeScript 5.7, Node.js 24 `node:test`, Next.js 15, React 19, Tailwind CSS 3.4
+**Tech Stack:** TypeScript 5.7, Node.js 22.14 `node:test`, Next.js 15, React 19, Tailwind CSS 3.4
 
 ## Global Constraints
 
@@ -77,7 +77,7 @@ test('does not mutate the source schedule array', () => {
 Add this entry under `scripts` in `package.json`:
 
 ```json
-"test:unit": "node --experimental-strip-types --test src/components/app/week-calendar-preview.test.mjs"
+"test:unit": "node --no-warnings --experimental-strip-types --test src/components/app/week-calendar-preview.test.mjs"
 ```
 
 - [ ] **Step 3: Run the test and verify RED**

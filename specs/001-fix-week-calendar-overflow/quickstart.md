@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 24.x
+- Node.js 22.14.0 이상
 - `npm ci` 완료
 - 로컬 실행에 필요한 환경 변수 설정
 

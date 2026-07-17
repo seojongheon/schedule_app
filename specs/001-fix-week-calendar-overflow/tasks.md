@@ -15,7 +15,7 @@
 
 **Purpose**: Add a dependency-free unit-test entry point.
 
-- [ ] T001 Add the Node 24 `test:unit` command for `src/components/app/week-calendar-preview.test.mjs` in `package.json`
+- [x] T001 Add the Node 22 `test:unit` command for `src/components/app/week-calendar-preview.test.mjs` in `package.json`
 
 ---
 
@@ -25,8 +25,8 @@
 
 **⚠️ CRITICAL**: T002 must fail for the expected missing-module reason before T003 creates production code.
 
-- [ ] T002 Create the failing 0/1/2/3/8/100 schedule and input-immutability tests in `src/components/app/week-calendar-preview.test.mjs`, then run `npm run test:unit` and confirm `ERR_MODULE_NOT_FOUND`
-- [ ] T003 Implement `buildWeekSchedulePreview<T>` and `WEEK_SCHEDULE_PREVIEW_LIMIT` in `src/components/app/week-calendar-preview.ts`, then run `npm run test:unit` and `npm run typecheck`
+- [x] T002 Create the failing 0/1/2/3/8/100 schedule and input-immutability tests in `src/components/app/week-calendar-preview.test.mjs`, then run `npm run test:unit` and confirm `ERR_MODULE_NOT_FOUND`
+- [x] T003 Implement `buildWeekSchedulePreview<T>` and `WEEK_SCHEDULE_PREVIEW_LIMIT` in `src/components/app/week-calendar-preview.ts`, then run `npm run test:unit` and `npm run typecheck`
 
 **Checkpoint**: The preview policy is framework-independent, tested, and ready for the weekly calendar.
 

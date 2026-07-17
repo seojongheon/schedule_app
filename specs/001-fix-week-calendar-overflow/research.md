@@ -25,9 +25,9 @@
 
 ## 테스트 런타임
 
-**Decision**: Node 24의 타입 제거 기능과 내장 테스트 러너를 사용해 `.mjs` 테스트에서 순수 `.ts` 모듈을 가져오고 `node --experimental-strip-types --test ...`로 실행한다.
+**Decision**: Node 22의 타입 제거 기능과 내장 테스트 러너를 사용해 `.mjs` 테스트에서 순수 `.ts` 모듈을 가져오고 `node --no-warnings --experimental-strip-types --test ...`로 실행한다. 애플리케이션의 모듈 형식은 바꾸지 않고 테스트 런타임에서 예상된 실험 기능 경고만 숨긴다.
 
-**Rationale**: 현재 런타임이 Node 24.14.1이며 새 패키지 없이 TypeScript 순수 모듈을 검증할 수 있다. 테스트 파일은 typecheck 대상에서 제외되는 `.mjs`로 두어 애플리케이션 TypeScript 설정을 변경하지 않는다.
+**Rationale**: 현재 npm 스크립트 런타임이 Node 22.14.0이며 새 패키지 없이 TypeScript 순수 모듈을 검증할 수 있다. 테스트 파일은 typecheck 대상에서 제외되는 `.mjs`로 두어 애플리케이션 TypeScript 설정을 변경하지 않는다.
 
 **Alternatives considered**:
 

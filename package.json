@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:unit": "node --no-warnings --experimental-strip-types --test src/components/app/week-calendar-preview.test.mjs",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "predeploy:check": "npm run typecheck && npm run lint && npm run build",

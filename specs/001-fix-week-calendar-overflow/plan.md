@@ -10,7 +10,7 @@
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.7, Node.js 24.14.1
+**Language/Version**: TypeScript 5.7, Node.js 22.14.0
 
 **Primary Dependencies**: Next.js 15, React 19, Tailwind CSS 3.4, date-fns 4
 
