@@ -8,6 +8,7 @@ import type { Profile, Schedule, SchedulingRoom } from '@/domain/entities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ParticipantFilterChip } from '@/components/app/ParticipantFilterChip';
+import { buildWeekSchedulePreview } from '@/components/app/week-calendar-preview';
 import { cn } from '@/lib/utils';
 
 function minutesFromDayStart(dateValue: string) {
@@ -258,6 +259,7 @@ export function ScheduleCalendar({
   const renderWeekDays = (weekDays: Date[]) => weekDays.map((day) => {
     const key = dateKey(day);
     const daySchedules = schedulesByDate[key] ?? [];
+    const { visibleSchedules, hiddenCount } = buildWeekSchedulePreview(daySchedules);
     const isToday = key === todayKey;
     const isSelected = key === selectedDateKey;
 
@@ -266,7 +268,7 @@ export function ScheduleCalendar({
         key={day.toISOString()}
         type="button"
         className={cn(
-          'flex min-h-24 flex-col rounded-2xl px-1 py-2 text-center transition',
+          'flex min-h-24 min-w-0 max-w-full overflow-hidden flex-col rounded-2xl px-0.5 py-2 text-center transition',
           isSelected ? 'bg-app-blueSoft ring-2 ring-app-blue/30' : 'bg-gray-50',
         )}
         onClick={() => {
@@ -292,8 +294,8 @@ export function ScheduleCalendar({
             {format(day, 'd')}
           </p>
         </div>
-        <div className="mt-1 min-h-11 flex-1 space-y-1">
-          {daySchedules.slice(0, 2).map((schedule) => {
+        <div className="mt-1 min-h-11 w-full min-w-0 max-w-full flex-1 space-y-1 overflow-hidden">
+          {visibleSchedules.map((schedule) => {
             const participants = room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
             const isShared = participants.length > 1;
             const primaryColor = isShared ? room.sharedScheduleColor : participants[0]?.color ?? room.color;
@@ -303,7 +305,7 @@ export function ScheduleCalendar({
               <span
                 key={schedule.id}
                 className={cn(
-                  'block h-5 w-full truncate rounded px-1 text-left text-[10px] font-bold',
+                  'block h-5 w-full min-w-0 max-w-full truncate rounded px-0.5 text-left text-[10px] font-bold leading-5',
                   !highlighted && 'opacity-25',
                 )}
                 style={{ backgroundColor: `${primaryColor}18`, color: primaryColor }}
@@ -312,9 +314,9 @@ export function ScheduleCalendar({
               </span>
             );
           })}
-          {daySchedules.length > 2 ? (
-            <span className="block truncate px-1 text-left text-[10px] font-bold text-gray-400">
-              +{daySchedules.length - 2}개
+          {hiddenCount > 0 ? (
+            <span className="block h-5 w-full min-w-0 max-w-full truncate px-0 text-left text-[9px] font-bold leading-5 tracking-tight text-gray-400">
+              +{hiddenCount}개
             </span>
           ) : null}
         </div>
@@ -411,9 +413,9 @@ export function ScheduleCalendar({
               )}
               style={{ transform: `translateX(calc(${weekSlidePercent}% + ${weekDragOffsetX}px))` }}
             >
-              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(previousWeekDays)}</div>
-              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(days)}</div>
-              <div className="grid w-1/3 shrink-0 grid-cols-7 gap-1">{renderWeekDays(nextWeekDays)}</div>
+              <div className="grid w-1/3 min-w-0 shrink-0 grid-cols-7 gap-1 overflow-hidden">{renderWeekDays(previousWeekDays)}</div>
+              <div className="grid w-1/3 min-w-0 shrink-0 grid-cols-7 gap-1 overflow-hidden">{renderWeekDays(days)}</div>
+              <div className="grid w-1/3 min-w-0 shrink-0 grid-cols-7 gap-1 overflow-hidden">{renderWeekDays(nextWeekDays)}</div>
             </div>
           </div>
         ) : null}

@@ -40,12 +40,12 @@
 
 ### Tests for User Story 1
 
-- [ ] T004 [US1] Reproduce and record the pre-fix 320px overflow condition using the Browser Validation and Computed Layout Checks in `specs/001-fix-week-calendar-overflow/quickstart.md`
+- [x] T004 [US1] Reproduce and record the pre-fix 320px overflow condition using the Browser Validation and Computed Layout Checks in `specs/001-fix-week-calendar-overflow/quickstart.md`
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Add `min-w-0`, `max-w-full`, `overflow-hidden`, fixed one-line height, and truncation boundaries to weekly panels, day buttons, schedule lists, and schedule slots in `src/components/app/ScheduleCalendar.tsx`
-- [ ] T006 [US1] Run `npm run typecheck`, `npm run lint`, and the 320px/375px/430px previous-current-next browser checks for empty, long Korean, long Latin, and unbroken titles from `specs/001-fix-week-calendar-overflow/quickstart.md`
+- [x] T005 [US1] Add `min-w-0`, `max-w-full`, `overflow-hidden`, fixed one-line height, and truncation boundaries to weekly panels, day buttons, schedule lists, and schedule slots in `src/components/app/ScheduleCalendar.tsx`
+- [x] T006 [US1] Run `npm run typecheck`, `npm run lint`, and the 320px/375px/430px previous-current-next browser checks for empty, long Korean, long Latin, and unbroken titles from `specs/001-fix-week-calendar-overflow/quickstart.md`
 
 **Checkpoint**: User Story 1 is visually contained and independently demonstrable without changing schedule counts.
 
@@ -59,12 +59,12 @@
 
 ### Tests for User Story 2
 
-- [ ] T007 [US2] Re-run `src/components/app/week-calendar-preview.test.mjs` and confirm all count and immutability cases pass before integrating the tested helper
+- [x] T007 [US2] Re-run `src/components/app/week-calendar-preview.test.mjs` and confirm all count and immutability cases pass before integrating the tested helper
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] Consume `buildWeekSchedulePreview` for schedule mapping and the `+N개` slot, and give the more slot the same one-line containment in `src/components/app/ScheduleCalendar.tsx`
-- [ ] T009 [US2] Verify 0/1/2/3/8/100 counts plus search, participant-filter, swipe, date-selection, monthly-calendar, and selected-day-timetable regressions using `specs/001-fix-week-calendar-overflow/quickstart.md`
+- [x] T008 [US2] Consume `buildWeekSchedulePreview` for schedule mapping and the `+N개` slot, and give the more slot the same one-line containment in `src/components/app/ScheduleCalendar.tsx`
+- [x] T009 [US2] Verify 0/1/2/3/8/100 counts plus search, participant-filter, swipe, date-selection, monthly-calendar, and selected-day-timetable regressions using `specs/001-fix-week-calendar-overflow/quickstart.md`
 
 **Checkpoint**: User Stories 1 and 2 both satisfy their independent acceptance scenarios.
 

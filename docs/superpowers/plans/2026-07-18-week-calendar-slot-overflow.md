@@ -172,7 +172,7 @@ Replace the more-slot condition and count with:
 
 ```tsx
 {hiddenCount > 0 ? (
-  <span className="block h-5 w-full min-w-0 max-w-full truncate px-1 text-left text-[10px] font-bold leading-5 text-gray-400">
+  <span className="block h-5 w-full min-w-0 max-w-full truncate px-0 text-left text-[9px] font-bold leading-5 tracking-tight text-gray-400">
     +{hiddenCount}개
   </span>
 ) : null}
@@ -184,13 +184,13 @@ Use these exact class strings for the affected elements:
 
 ```tsx
 // Day button
-'flex min-h-24 min-w-0 max-w-full overflow-hidden flex-col rounded-2xl px-1 py-2 text-center transition'
+'flex min-h-24 min-w-0 max-w-full overflow-hidden flex-col rounded-2xl px-0.5 py-2 text-center transition'
 
 // Schedule list
 <div className="mt-1 min-h-11 w-full min-w-0 max-w-full flex-1 space-y-1 overflow-hidden">
 
 // Schedule slot base classes
-'block h-5 w-full min-w-0 max-w-full truncate rounded px-1 text-left text-[10px] font-bold leading-5'
+'block h-5 w-full min-w-0 max-w-full truncate rounded px-0.5 text-left text-[10px] font-bold leading-5'
 
 // Each previous/current/next week grid panel
 <div className="grid w-1/3 min-w-0 shrink-0 grid-cols-7 gap-1 overflow-hidden">
