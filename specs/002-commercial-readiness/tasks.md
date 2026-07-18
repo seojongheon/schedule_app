@@ -40,11 +40,11 @@
 - [x] T012 Implement controlled audit event construction and metadata redaction in src/lib/audit/audit-event.ts
 - [x] T013 [P] Write failing general and sensitive request-policy tests in src/domain/rate-limit/policy.test.mjs
 - [x] T014 Implement allow, delay, reject, repeated-excess, block, and expiry decisions in src/domain/rate-limit/policy.ts
-- [ ] T015 Create the explicitly approved additive schema, migration, RLS policies, transactional invitation, audit, sanction, and request-control functions in supabase/migrations/20260718120000_commercial_readiness_foundation.sql
-- [ ] T016 [P] Create SQL assertions for RLS isolation, append-only audit, invitation concurrency, and request-control atomicity in supabase/tests/commercial_readiness_security.sql
-- [ ] T017 Regenerate and reconcile application schema types in src/data/database.types.ts
-- [ ] T018 Implement service repositories for profiles, roles, audit, and request-control storage in src/data/repositories/security-repository.ts
-- [ ] T019 Add server-only security configuration, request-ID, same-origin, and CSRF guard parsing with fail-closed production validation in src/lib/security-config.ts and src/lib/request-security.ts
+- [x] T015 Create the explicitly approved additive schema, migration, RLS policies, transactional invitation, audit, sanction, and request-control functions in supabase/migrations/20260718120000_commercial_readiness_foundation.sql
+- [x] T016 [P] Create SQL assertions for RLS isolation, append-only audit, invitation concurrency, and request-control atomicity in supabase/tests/commercial_readiness_security.sql
+- [x] T017 Regenerate and reconcile application schema types in src/data/database.types.ts
+- [x] T018 Implement service repositories for profiles, roles, audit, and request-control storage in src/data/repositories/security-repository.ts
+- [x] T019 Add server-only security configuration, request-ID, same-origin, and CSRF guard parsing with fail-closed production validation in src/lib/security-config.ts and src/lib/request-security.ts
 
 **Checkpoint**: Shared policies pass, new tables are protected, and no route depends on client-provided roles or plaintext private fields.
 

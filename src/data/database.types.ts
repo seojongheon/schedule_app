@@ -1,11 +1,28 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 type AccountStatus = 'active' | 'inactive';
+export type AccountState =
+  | 'pending_email_verification'
+  | 'pending_profile'
+  | 'pending_guardian_consent'
+  | 'active'
+  | 'restricted'
+  | 'suspended'
+  | 'deletion_pending'
+  | 'deleted';
 type RoomStatus = 'active' | 'archived';
 type CalendarView = 'week' | 'month';
-type RoomRole = 'owner' | 'manager' | 'member';
+export type RoomRole = 'owner' | 'manager' | 'member' | 'viewer';
+export type ServiceRole = 'super_admin' | 'operations_admin' | 'support_admin' | 'auditor';
 type ScheduleStatus = 'scheduled' | 'completed' | 'cancelled';
 type TaskPriority = 'low' | 'normal' | 'high';
+
+type GeneratedTable<Row> = {
+  Row: Row;
+  Insert: Partial<Row>;
+  Update: Partial<Row>;
+  Relationships: [];
+};
 
 export interface Database {
   public: {
@@ -21,6 +38,18 @@ export interface Database {
           created_at: string;
           updated_at: string;
           last_login_at: string | null;
+          display_name: string;
+          account_state: AccountState;
+          is_under_14: boolean;
+          terms_version: string | null;
+          privacy_version: string | null;
+          terms_accepted_at: string | null;
+          privacy_accepted_at: string | null;
+          session_started_at: string | null;
+          last_seen_at: string | null;
+          last_reauthenticated_at: string | null;
+          deletion_requested_at: string | null;
+          deletion_due_at: string | null;
         };
         Insert: {
           id: string;
@@ -32,6 +61,18 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           last_login_at?: string | null;
+          display_name?: string;
+          account_state?: AccountState;
+          is_under_14?: boolean;
+          terms_version?: string | null;
+          privacy_version?: string | null;
+          terms_accepted_at?: string | null;
+          privacy_accepted_at?: string | null;
+          session_started_at?: string | null;
+          last_seen_at?: string | null;
+          last_reauthenticated_at?: string | null;
+          deletion_requested_at?: string | null;
+          deletion_due_at?: string | null;
         };
         Update: {
           email?: string;
@@ -42,6 +83,18 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           last_login_at?: string | null;
+          display_name?: string;
+          account_state?: AccountState;
+          is_under_14?: boolean;
+          terms_version?: string | null;
+          privacy_version?: string | null;
+          terms_accepted_at?: string | null;
+          privacy_accepted_at?: string | null;
+          session_started_at?: string | null;
+          last_seen_at?: string | null;
+          last_reauthenticated_at?: string | null;
+          deletion_requested_at?: string | null;
+          deletion_due_at?: string | null;
         };
         Relationships: [];
       };
@@ -59,6 +112,9 @@ export interface Database {
           business_end_time: string;
           created_at: string;
           updated_at: string;
+          visibility: 'private' | 'invite_preview';
+          restriction_state: 'active' | 'restricted';
+          restricted_until: string | null;
         };
         Insert: {
           id?: string;
@@ -73,6 +129,9 @@ export interface Database {
           business_end_time?: string;
           created_at?: string;
           updated_at?: string;
+          visibility?: 'private' | 'invite_preview';
+          restriction_state?: 'active' | 'restricted';
+          restricted_until?: string | null;
         };
         Update: {
           name?: string;
@@ -85,6 +144,9 @@ export interface Database {
           business_start_time?: string;
           business_end_time?: string;
           updated_at?: string;
+          visibility?: 'private' | 'invite_preview';
+          restriction_state?: 'active' | 'restricted';
+          restricted_until?: string | null;
         };
         Relationships: [];
       };
@@ -123,29 +185,53 @@ export interface Database {
           room_id: string;
           code: string;
           created_by_user_id: string;
-          expires_at: string | null;
-          max_uses: number | null;
+          expires_at: string;
+          max_uses: number;
           used_count: number;
           is_active: boolean;
           created_at: string;
+          token_hash: string;
+          token_hint: string | null;
+          grant_role: 'member' | 'viewer';
+          status: 'active' | 'revoked' | 'expired' | 'exhausted' | 'replaced';
+          revoked_by_user_id: string | null;
+          revoked_at: string | null;
+          revocation_reason: string | null;
+          replacement_invite_id: string | null;
         };
         Insert: {
           id?: string;
           room_id: string;
           code: string;
           created_by_user_id: string;
-          expires_at?: string | null;
-          max_uses?: number | null;
+          expires_at: string;
+          max_uses: number;
           used_count?: number;
           is_active?: boolean;
           created_at?: string;
+          token_hash: string;
+          token_hint?: string | null;
+          grant_role?: 'member' | 'viewer';
+          status?: 'active' | 'revoked' | 'expired' | 'exhausted' | 'replaced';
+          revoked_by_user_id?: string | null;
+          revoked_at?: string | null;
+          revocation_reason?: string | null;
+          replacement_invite_id?: string | null;
         };
         Update: {
           code?: string;
-          expires_at?: string | null;
-          max_uses?: number | null;
+          expires_at?: string;
+          max_uses?: number;
           used_count?: number;
           is_active?: boolean;
+          token_hash?: string;
+          token_hint?: string | null;
+          grant_role?: 'member' | 'viewer';
+          status?: 'active' | 'revoked' | 'expired' | 'exhausted' | 'replaced';
+          revoked_by_user_id?: string | null;
+          revoked_at?: string | null;
+          revocation_reason?: string | null;
+          replacement_invite_id?: string | null;
         };
         Relationships: [];
       };
@@ -291,6 +377,91 @@ export interface Database {
         };
         Relationships: [];
       };
+      private_profiles: GeneratedTable<{
+        user_id: string; phone_ciphertext: string | null; phone_iv: string | null;
+        phone_auth_tag: string | null; phone_lookup_hash: string | null;
+        birth_date_ciphertext: string | null; birth_date_iv: string | null;
+        birth_date_auth_tag: string | null; key_version: number;
+        created_at: string; updated_at: string;
+      }>;
+      account_email_references: GeneratedTable<{
+        user_id: string; email_lookup_hash: string; verified_at: string | null;
+        created_at: string; updated_at: string;
+      }>;
+      guardian_consents: GeneratedTable<{
+        id: string; child_user_id: string;
+        status: 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn';
+        guardian_name_ciphertext: string | null; guardian_name_iv: string | null;
+        guardian_name_auth_tag: string | null; guardian_phone_ciphertext: string | null;
+        guardian_phone_iv: string | null; guardian_phone_auth_tag: string | null;
+        guardian_phone_lookup_hash: string | null; key_version: number; provider: string;
+        evidence_reference: string; terms_version: string; privacy_version: string;
+        requested_at: string; verified_at: string | null; expires_at: string;
+        withdrawn_at: string | null; created_at: string; updated_at: string;
+      }>;
+      service_role_assignments: GeneratedTable<{
+        id: string; user_id: string; role: ServiceRole; granted_by_user_id: string;
+        granted_at: string; revoked_by_user_id: string | null; revoked_at: string | null;
+        reason: string;
+      }>;
+      invitation_attempts: GeneratedTable<{
+        id: string; invite_id: string | null; actor_user_id: string | null;
+        ip_key: string; event_type: 'preview' | 'validate' | 'redeem' | 'deny';
+        result_code: string; request_id: string; occurred_at: string;
+      }>;
+      support_inquiries: GeneratedTable<{
+        id: string; user_id: string; category: 'general' | 'account' | 'consent' | 'privacy' | 'appeal';
+        subject: string; body_ciphertext: string; body_iv: string; body_auth_tag: string;
+        key_version: number; status: 'open' | 'in_progress' | 'answered' | 'closed';
+        assigned_to_user_id: string | null; created_at: string; updated_at: string;
+        closed_at: string | null; retention_until: string | null;
+      }>;
+      support_inquiry_messages: GeneratedTable<{
+        id: string; inquiry_id: string; author_user_id: string; author_kind: 'user' | 'admin';
+        body_ciphertext: string; body_iv: string; body_auth_tag: string;
+        key_version: number; created_at: string;
+      }>;
+      admin_notifications: GeneratedTable<{
+        id: string; audience_role: 'support_admin' | 'operations_admin' | 'super_admin';
+        type: 'new_inquiry' | 'aging_inquiry' | 'security_alert' | 'job_failure';
+        target_type: string; target_id: string; read_by_user_ids: string[]; created_at: string;
+      }>;
+      reports: GeneratedTable<{
+        id: string; reporter_user_id: string; target_type: 'account' | 'room'; target_id: string;
+        reason_code: string; detail_ciphertext: string | null; detail_iv: string | null;
+        detail_auth_tag: string | null; key_version: number | null;
+        status: 'open' | 'investigating' | 'resolved' | 'dismissed';
+        assigned_to_user_id: string | null; created_at: string; resolved_at: string | null;
+      }>;
+      sanctions: GeneratedTable<{
+        id: string; target_type: 'account' | 'room'; target_id: string;
+        sanction_type: 'restrict' | 'suspend'; reason: string; starts_at: string;
+        ends_at: string | null; imposed_by_user_id: string; released_by_user_id: string | null;
+        released_at: string | null; release_reason: string | null;
+      }>;
+      audit_events: GeneratedTable<{
+        id: string; event_type: string; actor_type: 'user' | 'admin' | 'system' | 'anonymous';
+        actor_key: string; target_type: string; target_key: string;
+        result: 'success' | 'denied' | 'failure'; reason_code: string; request_id: string;
+        metadata: Json; occurred_at: string; retention_until: string;
+      }>;
+      rate_limit_counters: GeneratedTable<{
+        scope: 'general_ip' | 'sensitive_ip' | 'login_account'; subject_key: string;
+        window_started_at: string; request_count: number; updated_at: string;
+      }>;
+      rate_limit_violations: GeneratedTable<{
+        id: string; subject_key: string; policy: 'general' | 'sensitive';
+        occurred_at: string; request_id: string; retention_until: string;
+      }>;
+      ip_blocks: GeneratedTable<{
+        id: string; ip_key: string; blocked_at: string; blocked_until: string;
+        source: 'automatic' | 'manual'; reason: string; released_by_user_id: string | null;
+        released_at: string | null; release_reason: string | null;
+      }>;
+      deletion_records: GeneratedTable<{
+        subject_key: string; requested_at: string; due_at: string;
+        completed_at: string | null; replayed_at: string | null; result_code: string;
+      }>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -357,6 +528,32 @@ export interface Database {
           p_schedule_id: string;
         };
         Returns: boolean;
+      };
+      has_service_capability: { Args: { p_capability: string }; Returns: boolean };
+      is_active_account: { Args: { p_user_id?: string }; Returns: boolean };
+      create_room_invite: {
+        Args: { p_room_id: string; p_token_hash: string; p_token_hint: string; p_grant_role: string;
+          p_expires_at: string; p_max_uses: number; p_request_id: string };
+        Returns: string;
+      };
+      revoke_room_invite: {
+        Args: { p_invite_id: string; p_reason: string; p_request_id: string };
+        Returns: undefined;
+      };
+      replace_room_invite: {
+        Args: { p_invite_id: string; p_token_hash: string; p_token_hint: string;
+          p_expires_at: string; p_max_uses: number; p_reason: string; p_request_id: string };
+        Returns: string;
+      };
+      redeem_room_invite: {
+        Args: { p_token_hash: string; p_nickname: string; p_color: string;
+          p_ip_key: string; p_request_id: string };
+        Returns: Json;
+      };
+      evaluate_request_limit: {
+        Args: { p_scope: string; p_subject_key: string; p_policy: string;
+          p_request_id: string; p_now?: string };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

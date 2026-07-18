@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test:unit": "node --no-warnings --experimental-strip-types --test src/*/*.test.mjs src/*/*/*.test.mjs",
-    "test:security": "node --no-warnings --experimental-strip-types --test src/domain/*/*.test.mjs src/lib/*/*.test.mjs src/data/repositories/*.test.mjs",
+    "test:security": "node --no-warnings --experimental-strip-types --test src/domain/*/*.test.mjs src/lib/*.test.mjs src/lib/*/*.test.mjs src/data/repositories/*.test.mjs",
     "test:coverage": "node --no-warnings --experimental-strip-types --experimental-test-coverage --test src/*/*.test.mjs src/*/*/*.test.mjs",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",

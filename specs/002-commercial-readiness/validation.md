@@ -26,6 +26,20 @@ The project-local worktree is nested beneath the primary checkout. Without `root
 | Focused security suite | PASS | `npm run test:security`: 27 passed, 0 failed |
 | TypeScript and ESLint | PASS | `npm run typecheck` and `npm run lint`: exit 0 |
 
+## Database and server security foundation — 2026-07-18
+
+| Check | Result | Evidence |
+|---|---|---|
+| Additive migration artifact | CREATED, UNAPPLIED | Adds account lifecycle, private envelopes, guardian consent, role assignments, secure invitations, inquiries, reports, sanctions, audit, request control, IP blocks, deletion markers, RLS, and protected functions |
+| SQL security assertions | CREATED, UNEXECUTED | Catalog assertions cover RLS, append-only audit, protected RPC grants, invitation row locking/idempotency, and atomic rate counter structure |
+| Application schema types | PASS | `src/data/database.types.ts` reconciled with the additive schema; `npm run typecheck`: exit 0 |
+| Security repository | PASS | Lifecycle-only profile reads, active role filtering, protected audit RPC, protected rate RPC, and error propagation tests |
+| Server security configuration | PASS | Production key requirements, provider activation, guardian mode, and trusted proxy validation tests |
+| Request guards | PASS | Request ID validation, exact-origin enforcement, and CSRF double-submit tests |
+| Focused security suite | PASS | `npm run test:security`: 39 passed, 0 failed |
+
+The migration and SQL assertions have deliberately not been run against the linked remote project. They require a disposable database and remain `UNVERIFIED` until that evidence exists.
+
 ## Direct verification status
 
 | Area | Status | Notes |
