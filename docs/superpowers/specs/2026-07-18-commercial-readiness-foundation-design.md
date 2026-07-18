@@ -85,13 +85,11 @@ Service roles and room roles are separate. A service administrator receives no r
 Supabase Auth remains the source of authentication identity, password hashing, email verification, OAuth identity, and refresh-token rotation. The application supports:
 
 - Email/password registration and login
-- Google OAuth through the built-in Supabase provider
-- Kakao OAuth through the built-in Supabase provider
-- Naver OAuth through a Supabase Custom OAuth2 provider
+- Google, Kakao, and Naver through three Supabase Custom OAuth/OIDC providers configured without provider email as an account-linking key
 - Password recovery through a short-lived, single-use email link
 - Explicit social-identity linking after recent authentication to an existing account
 
-Matching email addresses never trigger automatic identity linking. Provider callbacks allow only configured origins and exact callback paths. Provider access and refresh tokens are not persisted because the service does not call provider APIs after authentication.
+All three social providers use email-optional custom-provider configuration so Supabase Auth does not automatically link identities by matching provider email. A new social user verifies a separate service email during profile completion. An existing user signs in and reauthenticates before manually linking a social identity. Provider callbacks allow only configured origins and exact callback paths. Provider access and refresh tokens are not persisted because the service does not call provider APIs after authentication.
 
 ### 4.2 Profile and privacy module
 
@@ -319,9 +317,9 @@ Database backups run daily with a maximum 35-day rotation. Encryption keys and d
 
 Production activation requires:
 
-- Google OAuth application credentials and allowed callback configuration
-- Kakao OAuth application credentials, consent configuration, and allowed callbacks
-- Naver OAuth application approval, credentials, profile consent, and Supabase Custom OAuth2 configuration
+- Google Custom OIDC credentials, minimal scopes, email-optional configuration, and allowed callbacks
+- Kakao Custom OIDC credentials, minimal scopes, email-optional configuration, and allowed callbacks
+- Naver Custom OAuth2 application approval, credentials, minimal profile consent, email-optional configuration, and allowed callbacks
 - A Korean mobile identity-verification provider contract and credentials for legal-guardian verification
 - A server-side encryption key provider with environment-separated access control
 - Production backup, monitoring, alert delivery, and trusted-proxy configuration
