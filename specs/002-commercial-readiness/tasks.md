@@ -30,16 +30,16 @@
 
 **CRITICAL**: No user story route is exposed before these units and the approved schema migration exist.
 
-- [ ] T005 [P] Write failing account-state and session-age tests in src/domain/auth/account-policy.test.mjs
-- [ ] T006 Implement account-state, route access, inactivity, absolute-age, and recent-reauthentication rules in src/domain/auth/account-policy.ts
-- [ ] T007 [P] Write failing room and service capability matrix tests in src/domain/authorization/capabilities.test.mjs
-- [ ] T008 Implement room and service capability resolution in src/domain/authorization/capabilities.ts
-- [ ] T009 [P] Write failing authenticated-encryption, HMAC, tamper, and key-version tests in src/lib/privacy/encryption.test.mjs
-- [ ] T010 Implement the AES-256-GCM envelope and exact-match HMAC helpers in src/lib/privacy/encryption.ts
-- [ ] T011 [P] Write failing audit allowlist and redaction tests in src/lib/audit/audit-event.test.mjs
-- [ ] T012 Implement controlled audit event construction and metadata redaction in src/lib/audit/audit-event.ts
-- [ ] T013 [P] Write failing general and sensitive request-policy tests in src/domain/rate-limit/policy.test.mjs
-- [ ] T014 Implement allow, delay, reject, repeated-excess, block, and expiry decisions in src/domain/rate-limit/policy.ts
+- [x] T005 [P] Write failing account-state and session-age tests in src/domain/auth/account-policy.test.mjs
+- [x] T006 Implement account-state, route access, inactivity, absolute-age, and recent-reauthentication rules in src/domain/auth/account-policy.ts
+- [x] T007 [P] Write failing room and service capability matrix tests in src/domain/authorization/capabilities.test.mjs
+- [x] T008 Implement room and service capability resolution in src/domain/authorization/capabilities.ts
+- [x] T009 [P] Write failing authenticated-encryption, HMAC, tamper, and key-version tests in src/lib/privacy/encryption.test.mjs
+- [x] T010 Implement the AES-256-GCM envelope and exact-match HMAC helpers in src/lib/privacy/encryption.ts
+- [x] T011 [P] Write failing audit allowlist and redaction tests in src/lib/audit/audit-event.test.mjs
+- [x] T012 Implement controlled audit event construction and metadata redaction in src/lib/audit/audit-event.ts
+- [x] T013 [P] Write failing general and sensitive request-policy tests in src/domain/rate-limit/policy.test.mjs
+- [x] T014 Implement allow, delay, reject, repeated-excess, block, and expiry decisions in src/domain/rate-limit/policy.ts
 - [ ] T015 Create the explicitly approved additive schema, migration, RLS policies, transactional invitation, audit, sanction, and request-control functions in supabase/migrations/20260718120000_commercial_readiness_foundation.sql
 - [ ] T016 [P] Create SQL assertions for RLS isolation, append-only audit, invitation concurrency, and request-control atomicity in supabase/tests/commercial_readiness_security.sql
 - [ ] T017 Regenerate and reconcile application schema types in src/data/database.types.ts
