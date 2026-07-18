@@ -65,6 +65,7 @@ import { Field, TextareaField } from '@/components/ui/field';
 import { Sheet } from '@/components/ui/sheet';
 import { currentUser, preliminaryTasks as initialTasks, rooms as initialRooms, schedules as initialSchedules } from '@/lib/mock-data';
 import { accountStatusLabels, roomRoleLabels } from '@/lib/korean-labels';
+import { isScheduleOverlappingDay } from '@/lib/schedule-day';
 import { cn, formatCurrency } from '@/lib/utils';
 import { recognizeImageText } from '@/components/app/image-ocr';
 import { parseScheduleText } from '@/components/app/schedule-text-parser';
@@ -399,7 +400,11 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     .filter((schedule) => {
       const room = rooms.find((candidate) => candidate.id === schedule.roomId);
       const member = room ? getMyMember(room, workspaceProfile) : undefined;
-      return member ? schedule.participantMemberIds.includes(member.id) : false;
+      return Boolean(
+        member &&
+          schedule.participantMemberIds.includes(member.id) &&
+          isScheduleOverlappingDay(schedule.startAt, schedule.endAt),
+      );
     })
     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
