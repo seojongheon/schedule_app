@@ -40,6 +40,21 @@ The project-local worktree is nested beneath the primary checkout. Without `root
 
 The migration and SQL assertions have deliberately not been run against the linked remote project. They require a disposable database and remain `UNVERIFIED` until that evidence exists.
 
+## User Story 1 — secure account access — 2026-07-18
+
+| Check | Result | Evidence |
+|---|---|---|
+| Authentication input and account policy | PASS | Email normalization, password bounds, profile input, account-state, session-age, and recent-authentication tests |
+| Google, Kakao, Naver registry | PASS (unit), UNVERIFIED (live) | All three require `custom:*`, are email-optional, and malformed/disabled configuration fails safely |
+| Explicit identity linking | PASS (unit), UNVERIFIED (live) | Link mode requires an authenticated user and recent authentication; provider email is never accepted as ownership evidence |
+| Guardian verification | PASS (unit), DISABLED (production) | Disabled adapter fails closed; deterministic adapter is test-only and forbidden in production |
+| Email registration and recovery | PASS (build), UNVERIFIED (delivery) | Enumeration-safe routes and UI compile; outbound delivery requires hosted Auth configuration |
+| Password login | PASS (build), UNVERIFIED (hosted DB) | Server-only password verification, IP/account throttling, generic denials, session timestamps, and required audit persistence compile |
+| Profile completion | PASS (build), UNVERIFIED (hosted DB) | Private birth date and optional phone are encrypted before a transactional completion RPC; under-14 accounts remain guardian-pending |
+| Demo bypass removal | PASS | Protected pages no longer fall back to a mock user; middleware and server access checks fail closed |
+| Full unit suite | PASS | `npm run test:unit`: 53 passed, 0 failed |
+| Production build | PASS with recorded warnings | `npm run build`: exit 0; nested-lockfile warning remains an isolated-worktree artifact |
+
 ## Direct verification status
 
 | Area | Status | Notes |

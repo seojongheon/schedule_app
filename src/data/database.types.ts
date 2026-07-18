@@ -555,6 +555,24 @@ export interface Database {
           p_request_id: string; p_now?: string };
         Returns: Json;
       };
+      complete_commercial_profile: {
+        Args: {
+          p_display_name: string; p_is_under_14: boolean; p_terms_version: string; p_privacy_version: string;
+          p_email_lookup_hash: string; p_phone_ciphertext: string | null; p_phone_iv: string | null;
+          p_phone_auth_tag: string | null; p_phone_lookup_hash: string | null;
+          p_birth_date_ciphertext: string; p_birth_date_iv: string; p_birth_date_auth_tag: string;
+          p_key_version: number; p_request_id: string;
+        };
+        Returns: string;
+      };
+      append_audit_event: {
+        Args: {
+          p_event_type: string; p_actor_type: string; p_actor_key: string;
+          p_target_type: string; p_target_key: string; p_result: string;
+          p_reason_code: string; p_request_id: string; p_metadata?: Json;
+        };
+        Returns: string;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

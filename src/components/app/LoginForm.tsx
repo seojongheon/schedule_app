@@ -2,21 +2,16 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CalendarDays, Eye, EyeOff, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { normalizeLoginIdentifier } from '@/lib/account';
-import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
-
-type LoginProfileRow = {
-  status: 'active' | 'inactive';
-};
 
 const loginSchema = z.object({
-  account: z.string().min(1, '아이디 또는 이메일을 입력해주세요.'),
+    account: z.string().email('올바른 이메일을 입력해주세요.'),
   password: z.string().min(1, '비밀번호를 입력해주세요.'),
   remember: z.boolean().default(false),
 });
@@ -44,43 +39,21 @@ export function LoginForm() {
     setError(null);
 
     try {
-      const supabase = createSupabaseBrowserClient();
-      const email = normalizeLoginIdentifier(values.account);
-      const { error: signInError, data } = await supabase.auth.signInWithPassword({
-        email,
-        password: values.password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: values.account, password: values.password, remember: values.remember }),
       });
-
-      if (signInError) {
-        setError('아이디 또는 비밀번호를 확인해주세요.');
+      const payload = await response.json() as { message?: string; next?: string };
+      if (!response.ok) {
+        setError(payload.message ?? '로그인할 수 없습니다. 잠시 후 다시 시도해주세요.');
         return;
       }
-
-      if (data.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('status')
-          .eq('id', data.user.id)
-          .single();
-
-        const loginProfile = profile as LoginProfileRow | null;
-
-        if (loginProfile?.status === 'inactive') {
-          await supabase.auth.signOut();
-          setError('비활성화된 계정입니다. 관리자에게 문의해주세요.');
-          return;
-        }
-      }
+      router.replace(payload.next ?? '/dashboard');
+      router.refresh();
     } catch {
-      // Supabase 환경변수가 없는 데모 모드에서는 화면 확인을 위해 이동을 허용합니다.
+      setError('로그인할 수 없습니다. 잠시 후 다시 시도해주세요.');
     }
-
-    if (values.remember) {
-      window.localStorage.setItem('shared-schedule-remember', values.account);
-    }
-
-    router.replace('/dashboard');
-    router.refresh();
   };
 
   return (
@@ -98,12 +71,12 @@ export function LoginForm() {
           <Card className="space-y-4">
             <div>
               <label className="mb-2 block text-xs font-semibold text-gray-700" htmlFor="account">
-                아이디 또는 이메일
+                이메일
               </label>
               <input
                 id="account"
                 type="text"
-                placeholder="아이디 또는 이메일을 입력하세요"
+                placeholder="이메일을 입력하세요"
                 className="h-12 w-full rounded-xl border border-app-border px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
                 {...register('account')}
               />
@@ -142,7 +115,7 @@ export function LoginForm() {
               <button
                 type="button"
                 className="min-h-11 font-bold text-app-blue"
-                onClick={() => setError('비밀번호 재설정은 서비스 관리자에게 요청해주세요.')}
+                onClick={() => router.push('/recovery')}
               >
                 비밀번호 찾기
               </button>
@@ -160,8 +133,16 @@ export function LoginForm() {
             로그인
           </Button>
 
-          <Card className="text-center text-xs leading-5 text-gray-500">
-            관리자에게 발급받은 계정으로만 이용할 수 있습니다. 회원가입은 지원하지 않습니다.
+          <Card className="space-y-3 text-center text-sm text-gray-600">
+            <p>계정이 없으신가요?</p>
+            <Link className="inline-flex min-h-11 items-center font-bold text-app-blue" href="/signup">회원가입</Link>
+            <div className="grid grid-cols-3 gap-2 pt-2" aria-label="소셜 로그인">
+              {(['google', 'kakao', 'naver'] as const).map((provider) => (
+                <a key={provider} className="flex min-h-11 items-center justify-center rounded-xl border border-app-border font-semibold capitalize" href={`/api/auth/provider/${provider}/start?mode=signin`}>
+                  {provider}
+                </a>
+              ))}
+            </div>
           </Card>
         </form>
       </div>

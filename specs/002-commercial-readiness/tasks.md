@@ -56,18 +56,18 @@
 
 **Independent Test**: Execute spec User Story 1 scenarios with fake provider and guardian adapters and verify provider-disabled production behavior.
 
-- [ ] T020 [P] [US1] Write failing registration, login, recovery, provider, callback, profile, and reauthentication schema tests in src/domain/auth/auth-input.test.mjs
-- [ ] T021 [P] [US1] Write failing custom-provider registry and no-email-link tests in src/lib/auth/provider-registry.test.mjs
-- [ ] T022 [US1] Implement validated Google, Kakao, and Naver custom-provider registry and safe disabled states in src/lib/auth/provider-registry.ts
-- [ ] T023 [P] [US1] Write failing guardian provider contract and state-transition tests in src/lib/auth/guardian-verification.test.mjs
-- [ ] T024 [US1] Implement disabled production and deterministic test guardian adapters in src/lib/auth/guardian-verification.ts
-- [ ] T025 [US1] Move password sign-in behind rate-controlled POST handling in src/app/api/auth/login/route.ts and update src/components/app/LoginForm.tsx
-- [ ] T026 [US1] Implement enumeration-safe registration, recovery, and password-change routes in src/app/api/auth/register/route.ts, src/app/api/auth/recovery/route.ts, and src/app/api/auth/password/route.ts
-- [ ] T027 [US1] Implement custom-provider start, callback, and explicit-link flows in src/app/api/auth/provider/[provider]/start/route.ts, src/app/auth/callback/route.ts, and src/app/api/auth/identities/[provider]/link/route.ts
-- [ ] T028 [US1] Implement encrypted profile completion and guardian verification routes in src/app/api/auth/profile/route.ts and src/app/api/auth/guardian/verification/route.ts
-- [ ] T029 [US1] Implement signup, profile completion, recovery, and provider-state UI in src/app/signup/page.tsx, src/app/auth/complete-profile/page.tsx, src/app/recovery/page.tsx, and src/components/auth/AuthForms.tsx
-- [ ] T030 [US1] Replace demo fallback in src/lib/auth.ts and add authoritative account-state guards in src/lib/auth/account-access.ts and src/middleware.ts
-- [ ] T031 [US1] Run focused User Story 1 tests and record live-provider items as verified, disabled, or unverified in specs/002-commercial-readiness/validation.md
+- [x] T020 [P] [US1] Write failing registration, login, recovery, provider, callback, profile, and reauthentication schema tests in src/domain/auth/auth-input.test.mjs
+- [x] T021 [P] [US1] Write failing custom-provider registry and no-email-link tests in src/lib/auth/provider-registry.test.mjs
+- [x] T022 [US1] Implement validated Google, Kakao, and Naver custom-provider registry and safe disabled states in src/lib/auth/provider-registry.ts
+- [x] T023 [P] [US1] Write failing guardian provider contract and state-transition tests in src/lib/auth/guardian-verification.test.mjs
+- [x] T024 [US1] Implement disabled production and deterministic test guardian adapters in src/lib/auth/guardian-verification.ts
+- [x] T025 [US1] Move password sign-in behind rate-controlled POST handling in src/app/api/auth/login/route.ts and update src/components/app/LoginForm.tsx
+- [x] T026 [US1] Implement enumeration-safe registration, recovery, and password-change routes in src/app/api/auth/register/route.ts, src/app/api/auth/recovery/route.ts, and src/app/api/auth/password/route.ts
+- [x] T027 [US1] Implement custom-provider start, callback, and explicit-link flows in src/app/api/auth/provider/[provider]/start/route.ts, src/app/auth/callback/route.ts, and src/app/api/auth/identities/[provider]/link/route.ts
+- [x] T028 [US1] Implement encrypted profile completion and guardian verification routes in src/app/api/auth/profile/route.ts and src/app/api/auth/guardian/verification/route.ts
+- [x] T029 [US1] Implement signup, profile completion, recovery, and provider-state UI in src/app/signup/page.tsx, src/app/auth/complete-profile/page.tsx, src/app/recovery/page.tsx, and src/components/auth/AuthForms.tsx
+- [x] T030 [US1] Replace demo fallback in src/lib/auth.ts and add authoritative account-state guards in src/lib/auth/account-access.ts and src/middleware.ts
+- [x] T031 [US1] Run focused User Story 1 tests and record live-provider items as verified, disabled, or unverified in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Enabled public account flows work, inactive states fail closed, and no provider email triggers automatic merging.
 

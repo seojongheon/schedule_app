@@ -19,7 +19,9 @@ export async function middleware(request: NextRequest) {
     ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+  const protectedPath = /^\/(dashboard|rooms|mypage|admin)(\/|$)/.test(request.nextUrl.pathname);
   if (!supabaseUrl || !supabaseKey) {
+    if (protectedPath) return NextResponse.redirect(new URL('/login', request.url));
     return response;
   }
 
@@ -40,7 +42,8 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (protectedPath && !user) return NextResponse.redirect(new URL('/login', request.url));
 
   return response;
 }

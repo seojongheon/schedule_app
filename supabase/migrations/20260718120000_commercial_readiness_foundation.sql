@@ -468,6 +468,100 @@ begin
 end;
 $$;
 
+create or replace function public.record_guardian_verification(
+  p_status text, p_provider text, p_evidence_reference text,
+  p_terms_version text, p_privacy_version text, p_request_id text
+) returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_consent_id uuid;
+begin
+  if auth.uid() is null or p_status not in ('pending', 'approved', 'rejected') then
+    raise exception 'Invalid guardian verification result.';
+  end if;
+  if not exists (select 1 from public.profiles where id = auth.uid() and account_state = 'pending_guardian_consent') then
+    raise exception 'Guardian verification is not available for this account.';
+  end if;
+  select id into v_consent_id from public.guardian_consents
+  where child_user_id = auth.uid() and status in ('pending', 'approved') for update;
+  if v_consent_id is null then
+    insert into public.guardian_consents(
+      child_user_id, status, key_version, provider, evidence_reference,
+      terms_version, privacy_version, verified_at, expires_at
+    ) values (
+      auth.uid(), p_status, 1, p_provider, p_evidence_reference,
+      p_terms_version, p_privacy_version,
+      case when p_status = 'approved' then now() else null end,
+      now() + interval '24 hours'
+    ) returning id into v_consent_id;
+  else
+    update public.guardian_consents set status = p_status,
+      evidence_reference = p_evidence_reference,
+      verified_at = case when p_status = 'approved' then now() else null end,
+      updated_at = now()
+    where id = v_consent_id;
+  end if;
+  if p_status = 'approved' then
+    perform set_config('app.profile_transition', 'allowed', true);
+    update public.profiles set account_state = 'active' where id = auth.uid();
+  end if;
+  perform public.append_audit_event(
+    'guardian.verification', 'user', auth.uid()::text, 'guardian_consent', v_consent_id::text,
+    'success', 'guardian_' || p_status, p_request_id,
+    jsonb_build_object('status', p_status, 'provider', p_provider)
+  );
+  return case when p_status = 'approved' then 'active' else 'pending_guardian_consent' end;
+end;
+$$;
+
+create or replace function public.complete_commercial_profile(
+  p_display_name text, p_is_under_14 boolean,
+  p_terms_version text, p_privacy_version text,
+  p_email_lookup_hash text,
+  p_phone_ciphertext text, p_phone_iv text, p_phone_auth_tag text, p_phone_lookup_hash text,
+  p_birth_date_ciphertext text, p_birth_date_iv text, p_birth_date_auth_tag text,
+  p_key_version integer, p_request_id text
+) returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_state text := case when p_is_under_14 then 'pending_guardian_consent' else 'active' end;
+begin
+  if auth.uid() is null or char_length(trim(p_display_name)) not between 1 and 80
+     or p_key_version < 1 or p_birth_date_ciphertext is null then
+    raise exception 'Invalid profile completion request.';
+  end if;
+  insert into public.account_email_references(user_id, email_lookup_hash, verified_at)
+  values (auth.uid(), p_email_lookup_hash, now())
+  on conflict (user_id) do update set email_lookup_hash = excluded.email_lookup_hash,
+    verified_at = excluded.verified_at, updated_at = now();
+  insert into public.private_profiles(
+    user_id, phone_ciphertext, phone_iv, phone_auth_tag, phone_lookup_hash,
+    birth_date_ciphertext, birth_date_iv, birth_date_auth_tag, key_version
+  ) values (
+    auth.uid(), p_phone_ciphertext, p_phone_iv, p_phone_auth_tag, p_phone_lookup_hash,
+    p_birth_date_ciphertext, p_birth_date_iv, p_birth_date_auth_tag, p_key_version
+  ) on conflict (user_id) do update set
+    phone_ciphertext = excluded.phone_ciphertext, phone_iv = excluded.phone_iv,
+    phone_auth_tag = excluded.phone_auth_tag, phone_lookup_hash = excluded.phone_lookup_hash,
+    birth_date_ciphertext = excluded.birth_date_ciphertext, birth_date_iv = excluded.birth_date_iv,
+    birth_date_auth_tag = excluded.birth_date_auth_tag, key_version = excluded.key_version,
+    updated_at = now();
+  perform set_config('app.profile_transition', 'allowed', true);
+  update public.profiles set
+    display_name = trim(p_display_name), name = trim(p_display_name),
+    email = auth.uid()::text || '@redacted.invalid', phone = null,
+    is_under_14 = p_is_under_14, terms_version = p_terms_version,
+    privacy_version = p_privacy_version, terms_accepted_at = now(), privacy_accepted_at = now(),
+    account_state = v_state
+  where id = auth.uid() and account_state in ('pending_email_verification', 'pending_profile', 'pending_guardian_consent');
+  if not found then raise exception 'Profile cannot be completed in its current state.'; end if;
+  perform public.append_audit_event(
+    'profile.completed', 'user', auth.uid()::text, 'account', auth.uid()::text,
+    'success', 'profile_completed', p_request_id,
+    jsonb_build_object('status', v_state, 'operation', 'complete')
+  );
+  return v_state;
+end;
+$$;
+
 create or replace function public.revoke_room_invite(
   p_invite_id uuid, p_reason text, p_request_id text
 ) returns void language plpgsql security definer set search_path = public as $$
@@ -618,6 +712,7 @@ begin
   ) returning id into v_id;
 
   if p_target_type = 'account' then
+    perform set_config('app.profile_transition', 'allowed', true);
     update public.profiles
     set account_state = case when p_sanction_type = 'suspend' then 'suspended' else 'restricted' end
     where id = p_target_id and account_state <> 'deleted';
@@ -663,6 +758,7 @@ begin
         and target_id = v_sanction.target_id and id <> p_sanction_id
         and released_at is null and (ends_at is null or ends_at > now())
     ) then
+      perform set_config('app.profile_transition', 'allowed', true);
       update public.profiles set account_state = 'active'
       where id = v_sanction.target_id and account_state in ('restricted', 'suspended');
     end if;
@@ -746,7 +842,9 @@ $$;
 create or replace function public.prevent_commercial_profile_protected_change()
 returns trigger language plpgsql set search_path = public as $$
 begin
-  if auth.uid() = old.id and (
+  if auth.uid() = old.id
+     and current_setting('app.profile_transition', true) is distinct from 'allowed'
+     and (
     new.account_state is distinct from old.account_state
     or new.is_under_14 is distinct from old.is_under_14
     or new.terms_version is distinct from old.terms_version
@@ -860,6 +958,8 @@ revoke all on function public.revoke_room_invite(uuid, text, text) from public, 
 revoke all on function public.replace_room_invite(uuid, text, text, timestamptz, integer, text, text) from public, anon;
 revoke all on function public.apply_admin_sanction(text, uuid, text, text, timestamptz, text) from public, anon;
 revoke all on function public.release_admin_sanction(uuid, text, text) from public, anon;
+revoke all on function public.complete_commercial_profile(text, boolean, text, text, text, text, text, text, text, text, text, text, integer, text) from public, anon;
+revoke all on function public.record_guardian_verification(text, text, text, text, text, text) from public, anon;
 grant execute on function public.append_audit_event(text, text, text, text, text, text, text, text, jsonb) to service_role;
 grant execute on function public.evaluate_request_limit(text, text, text, text, timestamptz) to service_role;
 grant execute on function public.redeem_room_invite(text, text, text, text, text) to authenticated;
@@ -868,5 +968,7 @@ grant execute on function public.revoke_room_invite(uuid, text, text) to authent
 grant execute on function public.replace_room_invite(uuid, text, text, timestamptz, integer, text, text) to authenticated;
 grant execute on function public.apply_admin_sanction(text, uuid, text, text, timestamptz, text) to authenticated;
 grant execute on function public.release_admin_sanction(uuid, text, text) to authenticated;
+grant execute on function public.complete_commercial_profile(text, boolean, text, text, text, text, text, text, text, text, text, text, integer, text) to authenticated;
+grant execute on function public.record_guardian_verification(text, text, text, text, text, text) to authenticated;
 grant execute on function public.has_service_capability(text) to authenticated;
 grant execute on function public.is_active_account(uuid) to authenticated;
