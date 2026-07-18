@@ -5,6 +5,10 @@
 .next
 node_modules
 .worktrees/
+.agents/
+.specify/*
+!.specify/memory/
+!.specify/memory/constitution.md
 
 *.tsbuildinfo
 npm-debug.log*

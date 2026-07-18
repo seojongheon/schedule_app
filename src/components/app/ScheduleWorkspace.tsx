@@ -66,6 +66,7 @@ import { Sheet } from '@/components/ui/sheet';
 import { currentUser, preliminaryTasks as initialTasks, rooms as initialRooms, schedules as initialSchedules } from '@/lib/mock-data';
 import { accountStatusLabels, roomRoleLabels } from '@/lib/korean-labels';
 import { cn, formatCurrency } from '@/lib/utils';
+import { recognizeImageText } from '@/components/app/image-ocr';
 import { parseScheduleText } from '@/components/app/schedule-text-parser';
 
 type WorkspacePage = 'dashboard' | 'todayTasks' | 'preliminaryTasks' | 'rooms' | 'room' | 'mypage' | 'admin';
@@ -2415,6 +2416,7 @@ function ScheduleFormSheet({
   const formRef = useRef<HTMLFormElement>(null);
   const [captureText, setCaptureText] = useState('');
   const [captureStatus, setCaptureStatus] = useState('');
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const currentMember = getMyMember(room, currentUser) ?? room.members[0];
   const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
@@ -2460,27 +2462,27 @@ function ScheduleFormSheet({
       return;
     }
 
-    const textDetector = (window as typeof window & {
-      TextDetector?: new () => { detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>> };
-    }).TextDetector;
-
-    if (!textDetector) {
-      setCaptureStatus('이 브라우저는 이미지 글자 인식을 지원하지 않습니다. 캡쳐 속 문자 내용을 아래에 붙여넣으면 자동 입력할 수 있습니다.');
-      return;
-    }
+    event.target.value = '';
+    setIsOcrProcessing(true);
+    setCaptureStatus('이미지에서 글자를 읽는 중입니다. 0%');
 
     try {
-      const imageBitmap = await createImageBitmap(file);
-      const detector = new textDetector();
-      const detectedText = (await detector.detect(imageBitmap))
-        .map((item) => item.rawValue)
-        .filter(Boolean)
-        .join('\n');
+      const result = await recognizeImageText(file, (progress) => {
+        setCaptureStatus(`이미지에서 글자를 읽는 중입니다. ${progress}%`);
+      });
 
-      setCaptureText(detectedText);
-      applyParsedScheduleText(detectedText);
-    } catch {
-      setCaptureStatus('이미지에서 글자를 읽지 못했습니다. 문자 내용을 붙여넣어 주세요.');
+      if (result.kind === 'success') {
+        setCaptureText(result.text);
+        applyParsedScheduleText(result.text);
+      } else if (result.kind === 'empty') {
+        setCaptureStatus('이미지에서 읽을 수 있는 글자를 찾지 못했습니다. 문자 내용을 직접 붙여넣어 주세요.');
+      } else if (result.kind === 'unavailable') {
+        setCaptureStatus('이 브라우저에서는 이미지 글자 인식을 시작할 수 없습니다. 문자 내용을 직접 붙여넣어 자동 입력할 수 있습니다.');
+      } else {
+        setCaptureStatus(result.message);
+      }
+    } finally {
+      setIsOcrProcessing(false);
     }
   };
 
@@ -2545,10 +2547,13 @@ function ScheduleFormSheet({
                 <p className="text-xs font-bold text-gray-400">문자 자동 입력</p>
                 <p className="mt-1 text-sm font-semibold text-gray-800">캡쳐 이미지 또는 문자 내용을 넣으면 주요 항목을 채웁니다.</p>
               </div>
-              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-semibold text-gray-900 hover:bg-gray-50">
+              <label className={cn(
+                'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-3 text-sm font-semibold text-gray-900 hover:bg-gray-50',
+                isOcrProcessing ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+              )}>
                 <ImagePlus className="h-4 w-4" />
-                캡쳐
-                <input type="file" accept="image/*" className="sr-only" onChange={handleImageCapture} />
+                {isOcrProcessing ? '인식 중' : '캡쳐'}
+                <input type="file" accept="image/*" className="sr-only" disabled={isOcrProcessing} onChange={handleImageCapture} />
               </label>
             </div>
             <textarea
