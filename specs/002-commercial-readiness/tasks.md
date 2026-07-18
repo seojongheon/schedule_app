@@ -15,10 +15,10 @@
 
 **Purpose**: Establish repeatable test, coverage, and environment contracts without changing product behavior.
 
-- [ ] T001 Add full-domain test and coverage scripts while preserving existing unit tests in package.json
-- [ ] T002 [P] Document required custom OAuth, encryption, HMAC, trusted-proxy, and guardian adapter variables in .env.example
-- [ ] T003 [P] Create shared test fixtures for requests, clocks, identities, and repositories in src/test/security-fixtures.mjs
-- [ ] T004 Run npm run test:unit, npm run typecheck, npm run lint, and npm run build and record the baseline in specs/002-commercial-readiness/validation.md
+- [x] T001 Add full-domain test and coverage scripts while preserving existing unit tests in package.json
+- [x] T002 [P] Document required custom OAuth, encryption, HMAC, trusted-proxy, and guardian adapter variables in .env.example
+- [x] T003 [P] Create shared test fixtures for requests, clocks, identities, and repositories in src/test/security-fixtures.mjs
+- [x] T004 Run npm run test:unit, npm run typecheck, npm run lint, and npm run build and record the baseline in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Existing behavior has a reproducible green baseline or a documented pre-existing blocker.
 
