@@ -151,7 +151,7 @@ alter table public.room_invites
   add column if not exists replacement_invite_id uuid references public.room_invites(id);
 
 update public.room_invites
-set token_hash = case when token_hash is null then encode(gen_random_bytes(32), 'hex') else token_hash end,
+set token_hash = case when token_hash is null then encode(extensions.gen_random_bytes(32), 'hex') else token_hash end,
     token_hint = case when token_hash is null then null else token_hint end,
     expires_at = coalesce(expires_at, created_at + interval '7 days'),
     max_uses = coalesce(max_uses, 100),

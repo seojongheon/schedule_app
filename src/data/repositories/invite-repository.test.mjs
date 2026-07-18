@@ -62,6 +62,15 @@ test('replacement keeps the old invite active when nested creation is denied', a
   assert.ok(createIndex >= 0 && guardIndex > createIndex && replaceIndex > guardIndex);
 });
 
+test('legacy invite token backfill qualifies pgcrypto functions in the extensions schema', async () => {
+  const sql = await readFile(migrationUrl, 'utf8');
+  const start = sql.indexOf('update public.room_invites');
+  const end = sql.indexOf('alter table public.room_invites', start);
+  const body = sql.slice(start, end);
+  assert.match(body, /extensions\.gen_random_bytes\(32\)/);
+  assert.doesNotMatch(body, /(?<!extensions\.)gen_random_bytes\(32\)/);
+});
+
 test('repository surfaces protected RPC failures without exposing a raw token', async () => {
   const client = fakeClient({ replace_room_invite: { data: null, error: new Error('not authorized') } });
   const repository = createInviteRepository(client);
@@ -184,7 +193,7 @@ test('commercial migration replaces legacy creation and joining without plaintex
   );
   assert.doesNotMatch(migration, /set token_hash = coalesce\(token_hash, encode\(digest\(code, 'sha256'\)/i);
   assert.match(migration, /when token_hash is null then 'revoked'/i);
-  assert.match(migration, /when token_hash is null then encode\(gen_random_bytes\(32\), 'hex'\)/i);
+  assert.match(migration, /when token_hash is null then encode\(extensions\.gen_random_bytes\(32\), 'hex'\)/i);
 });
 
 test('invitation database functions record attempts and audits for every stable denial', async () => {
