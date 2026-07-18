@@ -1,4 +1,5 @@
 import type { PreliminaryTask, Profile, RoomMember, Schedule, SchedulingRoom, UserPreference } from '@/domain/entities';
+import { countSchedulesOverlappingDay } from '@/lib/schedule-day';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export interface ScheduleWorkspaceInitialData {
@@ -282,7 +283,7 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
         businessEndTime: timeText(room.business_end_time),
         inviteCode: inviteByRoomId.get(room.id) ?? '',
         members: membersByRoomId.get(room.id) ?? [],
-        todayScheduleCount: roomSchedules.length,
+        todayScheduleCount: countSchedulesOverlappingDay(roomSchedules),
         nextSchedule: nextSchedule ? `${timeText(nextSchedule.startAt.split('T')[1] ?? '')} ${nextSchedule.title}` : null,
         recentActivity: formatRecentActivity(room.updated_at),
       };

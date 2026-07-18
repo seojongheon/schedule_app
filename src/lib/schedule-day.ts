@@ -11,3 +11,12 @@ export function isScheduleOverlappingDay(
 
   return new Date(startAt) < nextDayStart && new Date(endAt) > dayStart;
 }
+
+export function countSchedulesOverlappingDay(
+  schedules: Array<{ startAt: string; endAt: string }>,
+  referenceDate: Date = new Date(),
+) {
+  return schedules.filter((schedule) =>
+    isScheduleOverlappingDay(schedule.startAt, schedule.endAt, referenceDate),
+  ).length;
+}
