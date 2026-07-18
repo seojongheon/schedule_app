@@ -687,6 +687,41 @@ begin
 end;
 $$;
 
+create or replace function public.preview_room_invite(
+  p_token_hash text, p_ip_key text, p_request_id text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_invite public.room_invites%rowtype;
+  v_result text;
+  v_preview jsonb;
+begin
+  select * into v_invite from public.room_invites where token_hash = p_token_hash;
+  if not found then
+    insert into public.invitation_attempts(ip_key, event_type, result_code, request_id)
+    values (p_ip_key, 'preview', 'invite_invalid', p_request_id);
+    return jsonb_build_object('result', 'invite_invalid');
+  end if;
+  v_result := case
+    when v_invite.status <> 'active' then 'invite_' || v_invite.status
+    when v_invite.expires_at <= now() then 'invite_expired'
+    when v_invite.used_count >= v_invite.max_uses then 'invite_exhausted'
+    else 'active' end;
+  if v_result = 'active' then
+    select jsonb_build_object(
+      'result', 'active', 'roomName', r.name, 'roomDescription', r.description,
+      'inviterDisplayName', p.display_name, 'grantRole', v_invite.grant_role,
+      'expiresAt', v_invite.expires_at
+    ) into v_preview from public.scheduling_rooms r
+    join public.profiles p on p.id = v_invite.created_by_user_id
+    where r.id = v_invite.room_id and r.restriction_state = 'active';
+    if v_preview is null then v_result := 'invite_invalid'; end if;
+  end if;
+  insert into public.invitation_attempts(invite_id, actor_user_id, ip_key, event_type, result_code, request_id)
+  values (v_invite.id, auth.uid(), p_ip_key, 'preview', v_result, p_request_id);
+  return coalesce(v_preview, jsonb_build_object('result', v_result));
+end;
+$$;
+
 create or replace function public.apply_admin_sanction(
   p_target_type text, p_target_id uuid, p_sanction_type text,
   p_reason text, p_ends_at timestamptz, p_request_id text
@@ -952,6 +987,7 @@ revoke all on public.private_profiles, public.account_email_references,
 revoke insert, update, delete on public.audit_events from anon, authenticated;
 revoke all on function public.append_audit_event(text, text, text, text, text, text, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.evaluate_request_limit(text, text, text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.preview_room_invite(text, text, text) from public, anon, authenticated;
 revoke all on function public.redeem_room_invite(text, text, text, text, text) from public, anon;
 revoke all on function public.create_room_invite(uuid, text, text, text, timestamptz, integer, text) from public, anon;
 revoke all on function public.revoke_room_invite(uuid, text, text) from public, anon;
@@ -962,6 +998,7 @@ revoke all on function public.complete_commercial_profile(text, boolean, text, t
 revoke all on function public.record_guardian_verification(text, text, text, text, text, text) from public, anon;
 grant execute on function public.append_audit_event(text, text, text, text, text, text, text, text, jsonb) to service_role;
 grant execute on function public.evaluate_request_limit(text, text, text, text, timestamptz) to service_role;
+grant execute on function public.preview_room_invite(text, text, text) to service_role;
 grant execute on function public.redeem_room_invite(text, text, text, text, text) to authenticated;
 grant execute on function public.create_room_invite(uuid, text, text, text, timestamptz, integer, text) to authenticated;
 grant execute on function public.revoke_room_invite(uuid, text, text) to authenticated;

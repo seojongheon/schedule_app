@@ -55,6 +55,16 @@ The migration and SQL assertions have deliberately not been run against the link
 | Full unit suite | PASS | `npm run test:unit`: 53 passed, 0 failed |
 | Production build | PASS with recorded warnings | `npm run build`: exit 0; nested-lockfile warning remains an isolated-worktree artifact |
 
+## User Story 2 — controlled invitations — partial 2026-07-18
+
+| Check | Result | Evidence |
+|---|---|---|
+| Opaque token policy | PASS | 256-bit random URL-safe tokens, SHA-256 storage hashes, non-secret hints, safe preview projection, and stable status tests |
+| Transactional database functions | CREATED, UNEXECUTED | Create, revoke, replace, safe preview, row-locked redeem, use-count exhaustion, attempts, and audit functions are present in the unapplied migration |
+| Preview and redeem routes | PASS (build), UNVERIFIED (hosted DB) | Sensitive rate control, HMAC IP keys, safe preview RPC, authenticated redemption, and join UI compile |
+| Viewer role | PASS (type/build) | Domain and presentation accept the read-only viewer role; mutation denial remains enforced by RLS |
+| Remaining invitation evidence | INCOMPLETE | Repository contract tests, replacement route/UI controls, disposable SQL concurrency execution, and direct browser verification remain open tasks |
+
 ## Direct verification status
 
 | Area | Status | Notes |

@@ -79,13 +79,13 @@
 
 **Independent Test**: Create, preview, redeem, concurrently exhaust, revoke, and replace invitations while checking member/viewer grants.
 
-- [ ] T032 [P] [US2] Write failing token, preview, status, role-grant, and idempotency tests in src/domain/invites/invite-policy.test.mjs
-- [ ] T033 [US2] Implement opaque-token generation, hashing, preview projection, and result mapping in src/domain/invites/invite-policy.ts
+- [x] T032 [P] [US2] Write failing token, preview, status, role-grant, and idempotency tests in src/domain/invites/invite-policy.test.mjs
+- [x] T033 [US2] Implement opaque-token generation, hashing, preview projection, and result mapping in src/domain/invites/invite-policy.ts
 - [ ] T034 [P] [US2] Write failing invitation repository and route contract tests in src/data/repositories/invite-repository.test.mjs
-- [ ] T035 [US2] Implement invitation repository calls to transactional functions in src/data/repositories/invite-repository.ts
+- [x] T035 [US2] Implement invitation repository calls to transactional functions in src/data/repositories/invite-repository.ts
 - [ ] T036 [US2] Implement create, preview, redeem, revoke, and replace endpoints in src/app/api/rooms/[roomId]/invites/route.ts and src/app/api/invites/[token]/route.ts
 - [ ] T037 [US2] Implement invite-preview and join UI plus room invitation controls in src/app/join/[token]/page.tsx and src/components/app/RoomInvitePanel.tsx
-- [ ] T038 [US2] Update room/member domain types and schedule presentation for viewer access in src/domain/entities.ts and src/components/app/ScheduleWorkspace.tsx
+- [x] T038 [US2] Update room/member domain types and schedule presentation for viewer access in src/domain/entities.ts and src/components/app/ScheduleWorkspace.tsx
 - [ ] T039 [US2] Run invitation unit, contract, SQL concurrency, and safe-preview checks and record results in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Invitation maximum uses cannot be exceeded and leaked links cannot reveal protected content or grant elevated roles.

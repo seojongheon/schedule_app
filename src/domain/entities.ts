@@ -1,4 +1,4 @@
-export type RoomRole = 'owner' | 'manager' | 'member';
+export type RoomRole = 'owner' | 'manager' | 'member' | 'viewer';
 export type ScheduleStatus = 'scheduled' | 'completed' | 'cancelled';
 export type AccountStatus = 'active' | 'inactive';
 export type TaskPriority = 'low' | 'normal' | 'high';

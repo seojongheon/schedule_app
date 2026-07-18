@@ -4,6 +4,7 @@ export const roomRoleLabels: Record<RoomRole, string> = {
   owner: '방장',
   manager: '매니저',
   member: '참여자',
+  viewer: '보기 전용',
 };
 
 export const scheduleStatusLabels: Record<ScheduleStatus, string> = {

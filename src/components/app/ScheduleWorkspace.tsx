@@ -330,7 +330,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   const [deleteRoomOpen, setDeleteRoomOpen] = useState(false);
   const [transferConfirmed, setTransferConfirmed] = useState(false);
   const [roomSearch, setRoomSearch] = useState('');
-  const [roomRoleFilter, setRoomRoleFilter] = useState<'all' | 'owner' | 'manager' | 'member'>('all');
+  const [roomRoleFilter, setRoomRoleFilter] = useState<'all' | RoomMember['role']>('all');
   const [sortMode, setSortMode] = useState<'recent' | 'name'>('recent');
   const [createdRoom, setCreatedRoom] = useState<SchedulingRoom | null>(null);
   const [roomsHydrated, setRoomsHydrated] = useState(false);
@@ -1684,10 +1684,10 @@ function RoomsView({
   profile: Profile;
   rooms: SchedulingRoom[];
   roomSearch: string;
-  roleFilter: 'all' | 'owner' | 'manager' | 'member';
+  roleFilter: 'all' | RoomMember['role'];
   sortMode: 'recent' | 'name';
   onSearch: (value: string) => void;
-  onRoleFilter: (value: 'all' | 'owner' | 'manager' | 'member') => void;
+  onRoleFilter: (value: 'all' | RoomMember['role']) => void;
   onSort: (value: 'recent' | 'name') => void;
   onCreateRoom: () => void;
   onJoinRoom: () => void;
@@ -1705,7 +1705,7 @@ function RoomsView({
         />
       </div>
       <div className="flex gap-2 overflow-x-auto scrollbar-none">
-        {(['all', 'owner', 'manager', 'member'] as const).map((role) => (
+        {(['all', 'owner', 'manager', 'member', 'viewer'] as const).map((role) => (
           <button
             key={role}
             type="button"
