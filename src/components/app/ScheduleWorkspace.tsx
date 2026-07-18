@@ -65,6 +65,7 @@ import { Field, TextareaField } from '@/components/ui/field';
 import { Sheet } from '@/components/ui/sheet';
 import { currentUser, preliminaryTasks as initialTasks, rooms as initialRooms, schedules as initialSchedules } from '@/lib/mock-data';
 import { accountStatusLabels, roomRoleLabels } from '@/lib/korean-labels';
+import { getSchedulesAssignedToProfile } from '@/lib/dashboard-schedules';
 import { isScheduleOverlappingDay } from '@/lib/schedule-day';
 import { cn, formatCurrency } from '@/lib/utils';
 import { recognizeImageText } from '@/components/app/image-ocr';
@@ -396,16 +397,9 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       : activeRoom;
   const displaySchedules = useMemo(() => uniqueSchedules(schedules), [schedules]);
   const visibleRoomSchedules = displaySchedules.filter((schedule) => schedule.roomId === activeRoom.id);
-  const todaySchedules = displaySchedules
-    .filter((schedule) => {
-      const room = rooms.find((candidate) => candidate.id === schedule.roomId);
-      const member = room ? getMyMember(room, workspaceProfile) : undefined;
-      return Boolean(
-        member &&
-          schedule.participantMemberIds.includes(member.id) &&
-          isScheduleOverlappingDay(schedule.startAt, schedule.endAt),
-      );
-    })
+  const dashboardCalendarSchedules = getSchedulesAssignedToProfile(displaySchedules, rooms, workspaceProfile.id);
+  const todaySchedules = dashboardCalendarSchedules
+    .filter((schedule) => isScheduleOverlappingDay(schedule.startAt, schedule.endAt))
     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
   const filteredRooms = useMemo(() => {
@@ -1185,7 +1179,8 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
         <DashboardView
           profile={workspaceProfile}
           rooms={rooms}
-          schedules={todaySchedules}
+          calendarSchedules={dashboardCalendarSchedules}
+          todaySchedules={todaySchedules}
           tasks={tasks}
           onCreateRoom={() => setActiveSheet('createRoom')}
           onJoinRoom={() => setActiveSheet('joinRoom')}
@@ -1407,7 +1402,8 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
 function DashboardView({
   profile,
   rooms,
-  schedules,
+  calendarSchedules,
+  todaySchedules,
   tasks,
   onCreateRoom,
   onJoinRoom,
@@ -1421,7 +1417,8 @@ function DashboardView({
 }: {
   profile: Profile;
   rooms: SchedulingRoom[];
-  schedules: Schedule[];
+  calendarSchedules: Schedule[];
+  todaySchedules: Schedule[];
   tasks: PreliminaryTask[];
   onCreateRoom: () => void;
   onJoinRoom: () => void;
@@ -1438,10 +1435,10 @@ function DashboardView({
   const [visibleTaskCount, setVisibleTaskCount] = useState(2);
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
   const visibleRooms = rooms.slice(0, visibleRoomCount);
-  const visibleSchedules = schedules.slice(0, visibleScheduleCount);
+  const visibleSchedules = todaySchedules.slice(0, visibleScheduleCount);
   const visibleTasks = tasks.slice(0, visibleTaskCount);
   const hiddenRoomCount = Math.max(rooms.length - visibleRoomCount, 0);
-  const hiddenScheduleCount = Math.max(schedules.length - visibleScheduleCount, 0);
+  const hiddenScheduleCount = Math.max(todaySchedules.length - visibleScheduleCount, 0);
   const hiddenTaskCount = Math.max(tasks.length - visibleTaskCount, 0);
   const myCalendarRoom = useMemo(() => buildMyCalendarRoom(profile, rooms), [profile, rooms]);
 
@@ -1501,7 +1498,7 @@ function DashboardView({
       <SectionHeader title="내 달력" />
       <ScheduleCalendar
         room={myCalendarRoom}
-        schedules={schedules}
+        schedules={calendarSchedules}
         currentUser={profile}
         onScheduleClick={onOpenSchedule}
         compact={!isCalendarExpanded}
@@ -1518,7 +1515,7 @@ function DashboardView({
       />
       <SectionHeader title="오늘 할 일" href="/dashboard/today" />
       <div className="space-y-3">
-        {schedules.length > 0 ? (
+        {todaySchedules.length > 0 ? (
           visibleSchedules.map((schedule) => {
             const room = rooms.find((candidate) => candidate.id === schedule.roomId) ?? rooms[0];
             return (
