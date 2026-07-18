@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
 const loginSchema = z.object({
-    account: z.string().email('올바른 이메일을 입력해주세요.'),
+    account: z.string().trim().min(1, '이메일 또는 관리자 ID를 입력해주세요.').max(254, '입력값이 너무 깁니다.'),
   password: z.string().min(1, '비밀번호를 입력해주세요.'),
   remember: z.boolean().default(false),
 });
@@ -71,12 +71,12 @@ export function LoginForm() {
           <Card className="space-y-4">
             <div>
               <label className="mb-2 block text-xs font-semibold text-gray-700" htmlFor="account">
-                이메일
+                이메일 또는 관리자 ID
               </label>
               <input
                 id="account"
                 type="text"
-                placeholder="이메일을 입력하세요"
+                placeholder="이메일 또는 관리자 ID를 입력하세요"
                 className="h-12 w-full rounded-xl border border-app-border px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
                 aria-invalid={errors.account ? true : undefined}
                 aria-describedby={errors.account ? 'account-error' : undefined}

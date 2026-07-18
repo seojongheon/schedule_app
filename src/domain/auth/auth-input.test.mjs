@@ -23,9 +23,9 @@ test("registration normalizes email and enforces a strong bounded password", () 
   }));
 });
 
-test("login accepts email only and rejects oversized inputs", () => {
+test("login accepts emails and normalized administrator IDs while rejecting oversized inputs", () => {
   assert.equal(loginInputSchema.parse({ email: "A@EXAMPLE.COM", password: "x" }).email, "a@example.com");
-  assert.throws(() => loginInputSchema.parse({ email: "not-email", password: "x" }));
+  assert.equal(loginInputSchema.parse({ email: "Admin", password: "x" }).email, "admin@shared-schedule.local");
   assert.throws(() => loginInputSchema.parse({ email: "a@example.com", password: "x".repeat(257) }));
 });
 

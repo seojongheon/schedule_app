@@ -1,6 +1,13 @@
 import { z } from 'zod';
+import { normalizeLoginIdentifier } from '../../lib/account.ts';
 
 const normalizedEmail = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
+const loginIdentifier = z.string()
+  .trim()
+  .min(1)
+  .max(254)
+  .transform(normalizeLoginIdentifier)
+  .refine((value) => value.length <= 254, 'Login identifier is too long.');
 const password = z.string()
   .min(12)
   .max(128)
@@ -10,7 +17,7 @@ const password = z.string()
   .regex(/[^A-Za-z0-9]/);
 
 export const loginInputSchema = z.object({
-  email: normalizedEmail,
+  email: loginIdentifier,
   password: z.string().min(1).max(256),
   remember: z.boolean().optional().default(false),
 });
