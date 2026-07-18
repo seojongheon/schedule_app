@@ -7,7 +7,6 @@ export interface ScheduleWorkspaceInitialData {
   schedules: Schedule[];
   tasks: PreliminaryTask[];
   preference?: UserPreference;
-  adminUsers?: Profile[];
 }
 
 type RoomRow = {
@@ -33,11 +32,6 @@ type MemberRow = {
   color: string;
   joined_at: string;
   last_active_at: string | null;
-};
-
-type InviteRow = {
-  room_id: string;
-  code: string;
 };
 
 type ScheduleRow = {
@@ -143,9 +137,6 @@ function formatRecentActivity(updatedAt: string) {
 export async function getScheduleWorkspaceData(profile: Profile): Promise<ScheduleWorkspaceInitialData> {
   try {
     const supabase = await createSupabaseServerClient();
-    const adminUsersPromise = profile.isServiceAdmin
-      ? supabase.from('profiles').select('*').order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] });
     const preferencePromise = supabase.from('user_preferences').select('*').eq('user_id', profile.id).single();
 
     const { data: roomData, error: roomError } = await supabase
@@ -166,13 +157,12 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
         .select('*')
         .eq('user_id', profile.id)
         .order('created_at', { ascending: false });
-      const [{ data: adminUserData }, { data: preferenceData }] = await Promise.all([adminUsersPromise, preferencePromise]);
+      const { data: preferenceData } = await preferencePromise;
 
       return {
         rooms: [],
         schedules: [],
         preference: preferenceData ? mapPreference(preferenceData as PreferenceRow) : undefined,
-        adminUsers: ((adminUserData ?? []) as ProfileRow[]).map(mapProfile),
         tasks: ((taskData ?? []) as TaskRow[]).map((task) => ({
           id: task.id,
           userId: task.user_id,
@@ -188,17 +178,13 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
 
     const [
       { data: memberData },
-      { data: inviteData },
       { data: scheduleData },
       { data: taskData },
-      { data: adminUserData },
       { data: preferenceData },
     ] = await Promise.all([
       supabase.from('room_members').select('*').in('room_id', roomIds),
-      supabase.from('room_invites').select('room_id, code').in('room_id', roomIds).eq('is_active', true),
       supabase.from('schedules').select('*').in('room_id', roomIds).order('start_at', { ascending: true }),
       supabase.from('preliminary_tasks').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }),
-      adminUsersPromise,
       preferencePromise,
     ]);
 
@@ -213,7 +199,6 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
         ])
       : [{ data: [] }, { data: [] }];
 
-    const inviteByRoomId = new Map((inviteData ?? [] as InviteRow[]).map((invite) => [invite.room_id, invite.code]));
     const membersByRoomId = memberRows.reduce<Map<string, RoomMember[]>>((groups, member) => {
       const roomMembers = groups.get(member.room_id) ?? [];
       const name = member.user_id === profile.id ? profile.name : member.nickname;
@@ -281,7 +266,6 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
         defaultView: room.default_view,
         businessStartTime: timeText(room.business_start_time),
         businessEndTime: timeText(room.business_end_time),
-        inviteCode: inviteByRoomId.get(room.id) ?? '',
         members: membersByRoomId.get(room.id) ?? [],
         todayScheduleCount: countSchedulesOverlappingDay(roomSchedules),
         nextSchedule: nextSchedule ? `${timeText(nextSchedule.startAt.split('T')[1] ?? '')} ${nextSchedule.title}` : null,
@@ -293,7 +277,6 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
       rooms,
       schedules,
       preference: preferenceData ? mapPreference(preferenceData as PreferenceRow) : undefined,
-      adminUsers: ((adminUserData ?? []) as ProfileRow[]).map(mapProfile),
       tasks: ((taskData ?? []) as TaskRow[]).map((task) => ({
         id: task.id,
         userId: task.user_id,
@@ -310,7 +293,6 @@ export async function getScheduleWorkspaceData(profile: Profile): Promise<Schedu
       rooms: [],
       schedules: [],
       tasks: [],
-      adminUsers: [],
     };
   }
 }

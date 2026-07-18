@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard, LogOut, UserRound } from 'lucide-react';
+import { LayoutDashboard, LogOut, MessageCircleQuestion, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -32,11 +32,11 @@ export function BottomNavigation() {
   return (
     <>
       <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[430px] border-t border-app-border bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur md:bottom-5 md:rounded-[28px] md:border md:shadow-soft">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-1">
           <Link
             href="/dashboard"
             className={cn(
-              'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-400',
+              'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-app-blue',
               isDashboardActive(pathname) && 'bg-app-blueSoft text-app-blue',
             )}
           >
@@ -44,9 +44,19 @@ export function BottomNavigation() {
             대시보드
           </Link>
           <Link
+            href="/support"
+            className={cn(
+              'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-app-blue',
+              pathname.startsWith('/support') && 'bg-app-blueSoft text-app-blue',
+            )}
+          >
+            <MessageCircleQuestion className="h-5 w-5" />
+            문의
+          </Link>
+          <Link
             href="/mypage"
             className={cn(
-              'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-400',
+              'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-app-blue',
               (pathname === '/mypage' || pathname === '/admin') && 'bg-app-blueSoft text-app-blue',
             )}
           >
@@ -55,7 +65,7 @@ export function BottomNavigation() {
           </Link>
           <button
             type="button"
-            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-400"
+            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-semibold text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-app-blue"
             onClick={() => setConfirmOpen(true)}
           >
             <LogOut className="h-5 w-5" />

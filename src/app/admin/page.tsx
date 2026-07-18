@@ -1,16 +1,11 @@
 import type { Metadata } from 'next';
-import { ScheduleWorkspace } from '@/components/app/ScheduleWorkspace';
-import { getScheduleWorkspaceData } from '@/data/schedule-supabase';
-import { getCurrentProfile } from '@/lib/auth';
+import { AdminWorkspace } from '@/components/admin/AdminWorkspace';
+import { getAdminActor } from '@/lib/admin/route-access';
 
-export const metadata: Metadata = {
-  title: '관리자',
-};
-
+export const metadata: Metadata = { title: '운영 관리' };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
-  const profile = await getCurrentProfile();
-  const initialData = await getScheduleWorkspaceData(profile);
-  return <ScheduleWorkspace page="admin" profile={profile} initialData={initialData} />;
+  const actor = await getAdminActor();
+  return <AdminWorkspace roles={actor?.roles ?? []} />;
 }

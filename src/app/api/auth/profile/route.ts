@@ -4,6 +4,7 @@ import { computeExactMatchHmac, encryptPrivateValue } from '@/lib/privacy/encryp
 import { assertSameOrigin, getOrCreateRequestId } from '@/lib/request-security';
 import { loadSecurityConfig } from '@/lib/security-config';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { withSensitiveRateLimit } from '@/lib/rate-limit/with-rate-limit';
 
 function isUnderFourteen(birthDate: string, today = new Date()): boolean {
   const [year, month, day] = birthDate.split('-').map(Number);
@@ -11,7 +12,7 @@ function isUnderFourteen(birthDate: string, today = new Date()): boolean {
   return today.getTime() < fourteenth.getTime();
 }
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const requestId = getOrCreateRequestId(request);
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin;
@@ -54,3 +55,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: '프로필을 저장할 수 없습니다.', requestId }, { status: 400 });
   }
 }
+
+export const POST = withSensitiveRateLimit(postHandler);

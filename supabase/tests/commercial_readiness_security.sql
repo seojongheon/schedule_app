@@ -61,8 +61,35 @@ begin
     'Invitation use count must increment inside redemption';
   assert position('already_member' in v_definition) > 0,
     'Invitation redemption must be idempotent for existing members';
+  assert position('record_invitation_outcome' in v_definition) > 0,
+    'Every invitation redemption outcome must use the transactional recorder';
+end;
+$$;
+
+do $$
+declare
+  v_definition text;
+  v_count integer;
+begin
+  select pg_get_functiondef(p.oid) into v_definition
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'record_invitation_outcome';
+
+  assert position('invitation_attempts' in v_definition) > 0,
+    'Invitation outcomes must append an attempt record';
   assert position('append_audit_event' in v_definition) > 0,
-    'Successful invitation redemption must append an audit event';
+    'Invitation outcomes must append an audit event';
+
+  select count(*) into v_count
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('join_room_by_invite', 'generate_invite_code');
+  assert v_count = 0, 'Legacy reusable plaintext invitation functions must be removed';
+
+  select pg_get_functiondef(p.oid) into v_definition
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'create_scheduling_room';
+  assert position('room_invites' in v_definition) = 0,
+    'Room creation must not create an invitation implicitly';
 end;
 $$;
 
@@ -77,10 +104,11 @@ begin
   assert v_definition is not null, 'evaluate_request_limit must exist';
   assert position('ON CONFLICT' in upper(v_definition)) > 0,
     'Request count must use an atomic upsert';
-  assert position($needle$interval '10 minutes'$needle$ in v_definition) > 0,
-    'Repeated hard excesses must use the ten-minute lookback';
-  assert position($needle$interval '15 minutes'$needle$ in v_definition) > 0,
-    'Automatic blocks must last fifteen minutes';
+  assert position('repeated_excess_window_seconds' in v_definition) > 0
+      and position('make_interval' in v_definition) > 0,
+    'Repeated hard excess lookback must use the configured policy window';
+  assert position('block_seconds' in v_definition) > 0,
+    'Automatic block duration must use the configured policy value';
 end;
 $$;
 

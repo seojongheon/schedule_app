@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import type { PreliminaryTask, RoomMember, Schedule, UserPreference } from '@/domain/entities';
-import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { hasRecentAuthentication } from '@/domain/auth/account-policy';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 type ActionResult<T = undefined> = T extends undefined
@@ -37,18 +37,6 @@ function supabasePayload<T extends Record<string, unknown> | Array<Record<string
   return value as never;
 }
 
-function normalizeInviteCode(invite: string) {
-  const trimmed = invite.trim();
-
-  if (!trimmed) {
-    return '';
-  }
-
-  return trimmed.includes('invite=')
-    ? new URL(trimmed, 'https://shared-schedule.local').searchParams.get('invite') ?? trimmed
-    : trimmed;
-}
-
 export async function createRoomAction(values: {
   name: string;
   description: string;
@@ -58,7 +46,7 @@ export async function createRoomAction(values: {
   defaultView: 'week' | 'month';
   businessStartTime: string;
   businessEndTime: string;
-}): Promise<ActionResult<{ roomId: string; inviteCode: string }>> {
+}): Promise<ActionResult<{ roomId: string }>> {
   try {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.rpc('create_scheduling_room', supabaseArgs({
@@ -76,7 +64,7 @@ export async function createRoomAction(values: {
       throw error;
     }
 
-    const result = data as { room_id?: string; invite_code?: string } | null;
+    const result = data as { room_id?: string } | null;
 
     if (!result?.room_id) {
       throw new Error('방 생성 결과를 확인하지 못했습니다.');
@@ -85,145 +73,9 @@ export async function createRoomAction(values: {
     revalidateApp();
     revalidatePath(`/rooms/${result.room_id}`);
 
-    return { ok: true, data: { roomId: result.room_id, inviteCode: result.invite_code ?? '' } };
-  } catch (error) {
-    logActionError('createRoomAction', error);
-    return { ok: false, message: messageFromError(error) };
-  }
-}
-
-export async function joinRoomAction(values: {
-  invite: string;
-  nickname: string;
-}): Promise<ActionResult<{ roomId: string }>> {
-  try {
-    const code = normalizeInviteCode(values.invite);
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.rpc('join_room_by_invite', supabaseArgs({
-      p_code: code,
-      p_nickname: values.nickname,
-      p_color: '#3558e6',
-    }));
-
-    if (error) {
-      throw error;
-    }
-
-    const result = data as { room_id?: string } | null;
-
-    if (!result?.room_id) {
-      throw new Error('방 참여 결과를 확인하지 못했습니다.');
-    }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${result.room_id}`);
-
     return { ok: true, data: { roomId: result.room_id } };
   } catch (error) {
-    logActionError('joinRoomAction', error);
-    return { ok: false, message: messageFromError(error) };
-  }
-}
-
-export async function validateInviteAction(invite: string): Promise<ActionResult<{
-  roomId: string;
-  name: string;
-  description: string | null;
-  ownerNickname: string;
-  memberCount: number;
-}>> {
-  try {
-    const code = normalizeInviteCode(invite);
-
-    if (!code) {
-      throw new Error('초대 코드를 입력해주세요.');
-    }
-
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw new Error('로그인이 필요합니다.');
-    }
-
-    const admin = createSupabaseAdminClient();
-    const { data: inviteData, error: inviteError } = await admin
-      .from('room_invites')
-      .select('room_id, expires_at, max_uses, used_count, is_active')
-      .eq('code', code)
-      .single();
-
-    if (inviteError || !inviteData) {
-      throw new Error('잘못된 초대 코드입니다.');
-    }
-
-    const inviteRow = inviteData as {
-      room_id: string;
-      expires_at: string | null;
-      max_uses: number | null;
-      used_count: number;
-      is_active: boolean;
-    };
-
-    if (!inviteRow.is_active) {
-      throw new Error('비활성화된 초대 코드입니다.');
-    }
-
-    if (inviteRow.expires_at && new Date(inviteRow.expires_at).getTime() < Date.now()) {
-      throw new Error('만료된 초대 코드입니다.');
-    }
-
-    if (inviteRow.max_uses !== null && inviteRow.used_count >= inviteRow.max_uses) {
-      throw new Error('사용 횟수를 초과한 초대 코드입니다.');
-    }
-
-    const { data: roomData, error: roomError } = await admin
-      .from('scheduling_rooms')
-      .select('id, name, description, status')
-      .eq('id', inviteRow.room_id)
-      .single();
-
-    if (roomError || !roomData) {
-      throw new Error('방 정보를 확인하지 못했습니다.');
-    }
-
-    const roomRow = roomData as {
-      id: string;
-      name: string;
-      description: string | null;
-      status: 'active' | 'archived';
-    };
-
-    if (roomRow.status !== 'active') {
-      throw new Error('비활성화된 방입니다.');
-    }
-
-    const { data: memberData, error: memberError } = await admin
-      .from('room_members')
-      .select('nickname, role')
-      .eq('room_id', roomRow.id);
-
-    if (memberError) {
-      throw memberError;
-    }
-
-    const members = (memberData ?? []) as Array<{ nickname: string; role: RoomMember['role'] }>;
-    const owner = members.find((member) => member.role === 'owner');
-
-    return {
-      ok: true,
-      data: {
-        roomId: roomRow.id,
-        name: roomRow.name,
-        description: roomRow.description,
-        ownerNickname: owner?.nickname ?? '-',
-        memberCount: members.length,
-      },
-    };
-  } catch (error) {
-    logActionError('validateInviteAction', error);
+    logActionError('createRoomAction', error);
     return { ok: false, message: messageFromError(error) };
   }
 }
@@ -601,31 +453,6 @@ export async function transferOwnershipAction(values: {
   }
 }
 
-export async function regenerateInviteCodeAction(roomId: string): Promise<ActionResult<{ inviteCode: string }>> {
-  try {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const code = `${Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')}-${Array.from({ length: 2 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')}`;
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from('room_invites')
-      .update(supabasePayload({ code, used_count: 0, is_active: true }))
-      .eq('room_id', roomId)
-      .eq('is_active', true);
-
-    if (error) {
-      throw error;
-    }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${roomId}`);
-
-    return { ok: true, data: { inviteCode: code } };
-  } catch (error) {
-    logActionError('regenerateInviteCodeAction', error);
-    return { ok: false, message: messageFromError(error) };
-  }
-}
-
 export async function updateProfileAction(values: {
   name: string;
   phone: string | null;
@@ -679,11 +506,22 @@ export async function updateCurrentPasswordAction(values: {
       throw new Error('로그인이 필요합니다.');
     }
 
+    const { data: profile } = await supabase.from('profiles')
+      .select('last_reauthenticated_at').eq('id', user.id).single() as unknown as {
+        data: { last_reauthenticated_at: string | null } | null;
+      };
+    if (!hasRecentAuthentication(profile?.last_reauthenticated_at)) {
+      throw new Error('최근 인증이 필요합니다.');
+    }
+
     const { error } = await supabase.auth.updateUser({ password: values.password });
 
     if (error) {
       throw error;
     }
+
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+    if (signOutError) throw signOutError;
 
     return { ok: true };
   } catch (error) {

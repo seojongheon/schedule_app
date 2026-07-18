@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const input = recoveryInputSchema.parse(await request.json());
     await enforceSensitiveLimit({ request, requestId, accountIdentifier: input.email });
     const supabase = await createSupabaseServerClient();
-    await supabase.auth.resetPasswordForEmail(input.email, { redirectTo: `${siteUrl}/recovery?mode=change` });
+    await supabase.auth.resetPasswordForEmail(input.email, { redirectTo: `${siteUrl}/auth/recovery-callback` });
     return NextResponse.json(accepted, { status: 202 });
   } catch (error) {
     if (error instanceof Error && 'retryAfter' in error) {

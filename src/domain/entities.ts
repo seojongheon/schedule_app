@@ -37,7 +37,6 @@ export interface SchedulingRoom {
   defaultView: 'week' | 'month';
   businessStartTime: string;
   businessEndTime: string;
-  inviteCode: string;
   members: RoomMember[];
   todayScheduleCount: number;
   nextSchedule: string | null;

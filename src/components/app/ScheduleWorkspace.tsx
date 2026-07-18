@@ -3,7 +3,6 @@
 import {
   ArrowLeft,
   CalendarPlus,
-  Copy,
   Crown,
   ImagePlus,
   KeyRound,
@@ -31,9 +30,7 @@ import {
   deletePreliminaryTaskAction,
   deleteRoomAction,
   deleteScheduleAction,
-  joinRoomAction,
   kickMemberAction,
-  regenerateInviteCodeAction,
   saveScheduleAction,
   transferOwnershipAction,
   updateMemberRoleAction,
@@ -44,7 +41,6 @@ import {
   updateScheduleCheckedAction,
   updateScheduleStatusAction,
   updateUserPreferencesAction,
-  validateInviteAction,
 } from '@/app/actions/schedule-actions';
 import type { ScheduleWorkspaceInitialData } from '@/data/schedule-supabase';
 import type { PreliminaryTask, Profile, RoomMember, Schedule, SchedulingRoom, UserPreference } from '@/domain/entities';
@@ -52,6 +48,7 @@ import { AppFrame } from '@/components/app/AppFrame';
 import { AppHeader } from '@/components/app/AppHeader';
 import { PreliminaryTaskCard } from '@/components/app/PreliminaryTaskCard';
 import { RoomCard } from '@/components/app/RoomCard';
+import { RoomInvitePanel } from '@/components/app/RoomInvitePanel';
 import { ScheduleCalendar } from '@/components/app/ScheduleCalendar';
 import { TodayTaskCard } from '@/components/app/TodayTaskCard';
 import { ParticipantAvatar, ParticipantAvatarGroup } from '@/components/common/ParticipantAvatar';
@@ -71,7 +68,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { recognizeImageText } from '@/components/app/image-ocr';
 import { parseScheduleText } from '@/components/app/schedule-text-parser';
 
-type WorkspacePage = 'dashboard' | 'todayTasks' | 'preliminaryTasks' | 'rooms' | 'room' | 'mypage' | 'admin';
+type WorkspacePage = 'dashboard' | 'todayTasks' | 'preliminaryTasks' | 'rooms' | 'room' | 'mypage';
 type SheetType =
   | 'createRoom'
   | 'createComplete'
@@ -83,7 +80,6 @@ type SheetType =
   | 'transferOwnership'
   | 'roomScheduleManagement'
   | 'preliminaryTask'
-  | 'adminAddUser'
   | 'inviteInfo'
   | 'roomInfo'
   | null;
@@ -148,21 +144,12 @@ type UserPreferenceFormValues = {
 };
 
 type InvitePreview = {
-  roomId: string;
-  name: string;
-  description: string | null;
-  ownerNickname: string;
-  memberCount: number;
-};
-
-type AdminUserFormValues = {
-  loginId: string;
-  email: string;
-  password: string;
-  passwordConfirm: string;
-  name: string;
-  phone: string;
-  isServiceAdmin: boolean;
+  result: 'active';
+  roomName: string;
+  roomDescription: string | null;
+  inviterDisplayName: string;
+  grantRole: 'member' | 'viewer';
+  expiresAt: string;
 };
 
 const roomStorageKey = (userId: string) => `shared-schedule:rooms:${userId}`;
@@ -285,7 +272,6 @@ function buildMyCalendarRoom(profile: Profile, rooms: SchedulingRoom[]): Schedul
     defaultView: 'week',
     businessStartTime: '00:00',
     businessEndTime: '24:00',
-    inviteCode: '',
     members: myMembers.length > 0
       ? myMembers
       : [
@@ -308,6 +294,18 @@ function buildMyCalendarRoom(profile: Profile, rooms: SchedulingRoom[]): Schedul
   };
 }
 
+function inviteTokenFromInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^[A-Za-z0-9_-]{43}$/.test(trimmed)) return trimmed;
+  try {
+    const url = new URL(trimmed, window.location.origin);
+    const match = url.pathname.match(/^\/join\/([A-Za-z0-9_-]{43})\/?$/);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function ScheduleWorkspace({ page, roomId, profile = currentUser, initialData }: ScheduleWorkspaceProps) {
   const router = useRouter();
   const [workspaceProfile, setWorkspaceProfile] = useState(profile);
@@ -315,14 +313,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   const [schedules, setSchedules] = useState(initialData?.schedules ?? initialSchedules);
   const [tasks, setTasks] = useState(initialData?.tasks ?? initialTasks);
   const [preference, setPreference] = useState<UserPreference>(initialData?.preference ?? defaultPreference(profile.id));
-  const [adminUsers, setAdminUsers] = useState<Profile[]>(
-    initialData?.adminUsers?.length
-      ? initialData.adminUsers
-      : [
-          profile,
-          { ...profile, id: 'user-jihyun', email: 'jihyun@example.com', name: '이지현', isServiceAdmin: false },
-        ],
-  );
   const [activeSheet, setActiveSheet] = useState<SheetType>(null);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [selectedTask, setSelectedTask] = useState<PreliminaryTask | null>(null);
@@ -346,7 +336,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       setSchedules(initialData?.schedules ?? []);
       setTasks(initialData?.tasks ?? []);
       setPreference(initialData?.preference ?? defaultPreference(profile.id));
-      setAdminUsers(initialData?.adminUsers?.length ? initialData.adminUsers : [profile]);
       setRoomsHydrated(true);
       return;
     }
@@ -383,7 +372,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     defaultView: 'week',
     businessStartTime: '00:00',
     businessEndTime: '24:00',
-    inviteCode: '',
     members: [],
     todayScheduleCount: 0,
     nextSchedule: null,
@@ -431,14 +419,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setActiveSheet('scheduleForm');
   };
 
-  const createInviteCode = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const segment = (length: number) =>
-      Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-
-    return `${segment(4)}-${segment(2)}`;
-  };
-
   const addDemoRoom = async (values: CreateRoomFormValues) => {
     const result = usesSupabaseData ? await createRoomAction(values) : null;
 
@@ -465,7 +445,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       defaultView: values.defaultView,
       businessStartTime: values.businessStartTime,
       businessEndTime: values.businessEndTime,
-      inviteCode: result?.ok ? result.data.inviteCode : createInviteCode(),
       todayScheduleCount: 0,
       nextSchedule: null,
       recentActivity: '방금 전',
@@ -561,64 +540,31 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   };
 
   const joinDemoRoom = async (values: JoinRoomFormValues) => {
-    if (usesSupabaseData) {
-      const result = await joinRoomAction(values);
+    const token = inviteTokenFromInput(values.invite);
+    if (!token) return { ok: false, message: '올바른 초대 링크를 입력해주세요.' };
 
-      if (!result.ok) {
-        return { ok: false, message: result.message };
+    try {
+      const response = await fetch(`/api/invites/${encodeURIComponent(token)}/redeem`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nickname: values.nickname, color: '#3558e6' }),
+      });
+      const result = await response.json() as { roomId?: string; code?: string };
+      if (!response.ok || !result.roomId) {
+        return {
+          ok: false,
+          message: result.code === 'account_not_active'
+            ? '활성 계정으로 로그인한 뒤 참여할 수 있습니다.'
+            : '초대를 사용할 수 없습니다. 새 링크를 요청해주세요.',
+        };
       }
-
       setActiveSheet(null);
-      router.push(`/rooms/${result.data.roomId}`);
+      router.push(`/rooms/${result.roomId}`);
       router.refresh();
       return { ok: true, message: '' };
+    } catch {
+      return { ok: false, message: '초대 참여를 처리하지 못했습니다. 다시 시도해주세요.' };
     }
-
-    const invite = values.invite.trim();
-    const inviteCode = invite.includes('invite=')
-      ? new URL(invite, 'https://shared-schedule.local').searchParams.get('invite') ?? invite
-      : invite;
-    const targetRoom = rooms.find((room) => room.inviteCode.toLowerCase() === inviteCode.toLowerCase());
-
-    if (!targetRoom) {
-      return { ok: false, message: '잘못된 초대 코드입니다.' };
-    }
-
-    if (targetRoom.status !== 'active') {
-      return { ok: false, message: '비활성화된 방입니다.' };
-    }
-
-    if (getMyMember(targetRoom, workspaceProfile)) {
-      return { ok: false, message: '이미 참여 중인 방입니다.' };
-    }
-
-    if (targetRoom.members.some((member) => member.nickname === values.nickname.trim())) {
-      return { ok: false, message: '이미 사용 중인 닉네임입니다.' };
-    }
-
-    const newMember: RoomMember = {
-      id: `member-${targetRoom.id}-${Date.now()}`,
-      roomId: targetRoom.id,
-      userId: workspaceProfile.id,
-      nickname: values.nickname.trim(),
-      role: 'member',
-      color: workspaceProfile.id === currentUser.id ? '#3558e6' : targetRoom.color,
-      joinedAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-      email: workspaceProfile.email,
-      name: workspaceProfile.name,
-    };
-
-    setRooms((previous) =>
-      previous.map((room) =>
-        room.id === targetRoom.id
-          ? { ...room, members: [...room.members, newMember], recentActivity: '방금 전 참여' }
-          : room,
-      ),
-    );
-    setActiveSheet(null);
-    router.push(`/rooms/${targetRoom.id}`);
-    return { ok: true, message: '' };
   };
 
   const addPreliminaryTask = async (values: PreliminaryTaskFormValues) => {
@@ -905,24 +851,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     router.refresh();
   };
 
-  const regenerateInviteCode = async (targetRoomId: string) => {
-    const result = usesSupabaseData ? await regenerateInviteCodeAction(targetRoomId) : null;
-
-    if (result && !result.ok) {
-      window.alert(result.message);
-      return;
-    }
-
-    setRooms((previous) =>
-      previous.map((room) =>
-        room.id === targetRoomId
-          ? { ...room, inviteCode: result?.ok ? result.data.inviteCode : createInviteCode() }
-          : room,
-      ),
-    );
-    router.refresh();
-  };
-
   const saveProfile = async (values: ProfileFormValues) => {
     if (usesSupabaseData) {
       const result = await updateProfileAction({
@@ -993,184 +921,18 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     | { ok: true; data: InvitePreview }
     | { ok: false; message: string }
   > => {
-    if (usesSupabaseData) {
-      const result = await validateInviteAction(invite);
-
-      if (!result.ok) {
-        return { ok: false as const, message: result.message };
+    const token = inviteTokenFromInput(invite);
+    if (!token) return { ok: false as const, message: '올바른 초대 링크를 입력해주세요.' };
+    try {
+      const response = await fetch(`/api/invites/${encodeURIComponent(token)}`);
+      const result = await response.json() as Partial<InvitePreview> & { result?: string };
+      if (!response.ok || result.result !== 'active') {
+        return { ok: false as const, message: '초대를 사용할 수 없습니다. 새 링크를 요청해주세요.' };
       }
-
-      return { ok: true as const, data: result.data };
+      return { ok: true as const, data: result as InvitePreview };
+    } catch {
+      return { ok: false as const, message: '초대 링크를 확인하지 못했습니다. 다시 시도해주세요.' };
     }
-
-    const inviteCode = invite.includes('invite=')
-      ? new URL(invite, 'https://shared-schedule.local').searchParams.get('invite') ?? invite
-      : invite;
-    const room = rooms.find((candidate) => candidate.inviteCode.toLowerCase() === inviteCode.trim().toLowerCase());
-
-    if (!room) {
-      return { ok: false as const, message: '잘못된 초대 코드입니다.' };
-    }
-
-    if (room.status !== 'active') {
-      return { ok: false as const, message: '비활성화된 방입니다.' };
-    }
-
-    return {
-      ok: true as const,
-      data: {
-        roomId: room.id,
-        name: room.name,
-        description: room.description,
-        ownerNickname: room.members.find((member) => member.role === 'owner')?.nickname ?? '-',
-        memberCount: room.members.length,
-      },
-    };
-  };
-
-  const addAdminUser = async (values: AdminUserFormValues) => {
-    if (values.password !== values.passwordConfirm) {
-      return { ok: false, message: '비밀번호가 일치하지 않습니다.' };
-    }
-
-    if (values.password.length < 12) {
-      return { ok: false, message: '비밀번호는 12자 이상이어야 합니다.' };
-    }
-
-    if (!/[A-Z]/.test(values.password) || !/[a-z]/.test(values.password) || !/[0-9]/.test(values.password) || !/[^A-Za-z0-9]/.test(values.password)) {
-      return { ok: false, message: '비밀번호에는 대문자, 소문자, 숫자, 특수문자가 모두 포함되어야 합니다.' };
-    }
-
-    const email = values.email.trim() || `${values.loginId.trim().toLowerCase()}@shared-schedule.local`;
-
-    if (adminUsers.some((user) => user.email.toLowerCase() === email.toLowerCase())) {
-      return { ok: false, message: '이미 존재하는 계정입니다.' };
-    }
-
-    if (usesSupabaseData) {
-      const response = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          loginId: values.loginId.trim(),
-          email: values.email.trim() || undefined,
-          password: values.password,
-          name: values.name.trim(),
-          phone: values.phone.trim() || null,
-          isServiceAdmin: values.isServiceAdmin,
-          status: 'active',
-        }),
-      });
-      const payload = await response.json().catch(() => ({})) as {
-        id?: string;
-        email?: string;
-        name?: string;
-        isServiceAdmin?: boolean;
-        status?: Profile['status'];
-        message?: string;
-      };
-
-      if (!response.ok) {
-        return { ok: false, message: payload.message ?? '계정을 생성하지 못했습니다.' };
-      }
-
-      setAdminUsers((previous) => [
-        {
-          id: payload.id ?? `user-${Date.now()}`,
-          email: payload.email ?? email,
-          name: payload.name ?? values.name.trim(),
-          phone: values.phone.trim() || null,
-          isServiceAdmin: Boolean(payload.isServiceAdmin),
-          status: payload.status ?? 'active',
-          lastLoginAt: null,
-        },
-        ...previous,
-      ]);
-      setActiveSheet(null);
-      router.refresh();
-      return { ok: true, message: '' };
-    }
-
-    setAdminUsers((previous) => [
-      {
-        id: `user-${Date.now()}`,
-        email,
-        name: values.name.trim() || values.loginId.trim(),
-        phone: values.phone.trim() || null,
-        isServiceAdmin: values.isServiceAdmin,
-        status: 'active',
-        lastLoginAt: null,
-      },
-      ...previous,
-    ]);
-    setActiveSheet(null);
-    return { ok: true, message: '' };
-  };
-
-  const updateAdminUser = async (userId: string, updates: Partial<Pick<Profile, 'name' | 'phone' | 'isServiceAdmin' | 'status'>>) => {
-    if (usesSupabaseData) {
-      const response = await fetch('/api/admin/users', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId, ...updates }),
-      });
-      const payload = await response.json().catch(() => ({})) as { message?: string };
-
-      if (!response.ok) {
-        window.alert(payload.message ?? '사용자 정보를 수정하지 못했습니다.');
-        return;
-      }
-    }
-
-    setAdminUsers((previous) => previous.map((user) => (user.id === userId ? { ...user, ...updates } : user)));
-    router.refresh();
-  };
-
-  const resetAdminPassword = async (user: Profile) => {
-    const temporaryPassword = `Temp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`;
-    const password = window.prompt(`${user.name}님의 새 임시 비밀번호를 입력하세요.`, temporaryPassword);
-
-    if (!password) {
-      return;
-    }
-
-    if (password.length < 12) {
-      window.alert('비밀번호는 12자 이상이어야 합니다.');
-      return;
-    }
-
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-      window.alert('비밀번호에는 대문자, 소문자, 숫자, 특수문자가 모두 포함되어야 합니다.');
-      return;
-    }
-
-    if (usesSupabaseData) {
-      const response = await fetch('/api/admin/users/reset-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.id, password }),
-      });
-      const payload = await response.json().catch(() => ({})) as { message?: string };
-
-      if (!response.ok) {
-        window.alert(payload.message ?? '비밀번호를 초기화하지 못했습니다.');
-        return;
-      }
-    }
-
-    setAdminUsers((previous) =>
-      previous.map((candidate) =>
-        candidate.id === user.id ? { ...candidate, lastLoginAt: '임시 비밀번호 발급됨' } : candidate,
-      ),
-    );
-    window.alert(`임시 비밀번호가 설정되었습니다.\n${password}`);
-    router.refresh();
   };
 
   return (
@@ -1255,17 +1017,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
           onSaveProfile={saveProfile}
           onSavePassword={savePassword}
           onSavePreferences={savePreferences}
-        />
-      ) : null}
-
-      {page === 'admin' ? (
-        <AdminView
-          profile={workspaceProfile}
-          users={adminUsers}
-          onAddUser={() => setActiveSheet('adminAddUser')}
-          onToggleStatus={(user) => updateAdminUser(user.id, { status: user.status === 'active' ? 'inactive' : 'active' })}
-          onToggleAdmin={(user) => updateAdminUser(user.id, { isServiceAdmin: !user.isServiceAdmin })}
-          onResetPassword={resetAdminPassword}
         />
       ) : null}
 
@@ -1369,12 +1120,10 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
         }}
         onSubmit={addPreliminaryTask}
       />
-      <AdminAddUserSheet open={activeSheet === 'adminAddUser'} onClose={() => setActiveSheet(null)} onSubmit={addAdminUser} />
-      <InviteInfoSheet
+      <RoomInvitePanel
         open={activeSheet === 'inviteInfo'}
-        room={activeRoom}
+        roomId={activeRoom.id}
         onClose={() => setActiveSheet(null)}
-        onRegenerate={() => regenerateInviteCode(activeRoom.id)}
       />
       <RoomInfoSheet open={activeSheet === 'roomInfo'} room={activeRoom} onClose={() => setActiveSheet(null)} />
       <ConfirmDialog
@@ -1389,7 +1138,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       <ConfirmDialog
         open={deleteRoomOpen}
         title="이 방을 삭제하시겠습니까?"
-        description="방을 삭제하면 참여자, 초대 코드, 일정이 함께 삭제됩니다. 삭제한 방은 복구할 수 없습니다."
+        description="방을 삭제하면 참여자, 초대 링크, 일정이 함께 삭제됩니다. 삭제한 방은 복구할 수 없습니다."
         confirmLabel="방 삭제"
         danger
         onClose={() => setDeleteRoomOpen(false)}
@@ -1959,76 +1708,6 @@ function MyPageView({
   );
 }
 
-function AdminView({
-  profile,
-  users,
-  onAddUser,
-  onToggleStatus,
-  onToggleAdmin,
-  onResetPassword,
-}: {
-  profile: Profile;
-  users: Profile[];
-  onAddUser: () => void;
-  onToggleStatus: (user: Profile) => void;
-  onToggleAdmin: (user: Profile) => void;
-  onResetPassword: (user: Profile) => void;
-}) {
-  if (!profile.isServiceAdmin) {
-    return (
-      <div className="space-y-5">
-        <BackHeader title="관리자" />
-        <Card className="py-10 text-center">
-          <Shield className="mx-auto h-10 w-10 text-app-danger" />
-          <h1 className="mt-4 text-xl font-black text-gray-950">관리자 권한이 없습니다</h1>
-          <p className="mt-2 text-sm text-gray-500">서비스 관리자만 이 페이지에 접근할 수 있습니다.</p>
-          <Link href="/mypage" className="mt-5 inline-flex">
-            <Button type="button" variant="outline">마이페이지로 이동</Button>
-          </Link>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <BackHeader title="서비스 계정 관리" />
-      <Button type="button" className="w-full" onClick={onAddUser}>
-        <UserPlus className="h-4 w-4" />
-        계정 추가
-      </Button>
-      <div className="space-y-3">
-        {users.map((user) => (
-          <Card key={user.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-black text-gray-950">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
-                <p className="mt-2 text-xs text-gray-400">마지막 로그인: {user.lastLoginAt ?? '-'}</p>
-                <p className="mt-1 text-xs font-semibold text-gray-500">상태: {accountStatusLabels[user.status]}</p>
-              </div>
-              <span className={cn('rounded-full px-3 py-1 text-xs font-bold', user.isServiceAdmin ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600')}>
-                {user.isServiceAdmin ? '서비스 관리자' : '일반 사용자'}
-              </span>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onResetPassword(user)}>
-                비밀번호 초기화
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onToggleStatus(user)}>
-                {user.status === 'active' ? '비활성화' : '활성화'}
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="min-h-11 whitespace-normal" onClick={() => onToggleAdmin(user)}>
-                {user.isServiceAdmin ? '관리자 해제' : '관리자 부여'}
-              </Button>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SectionHeader({ title, href }: { title: string; href?: string }) {
   return (
     <div className="flex items-center justify-between">
@@ -2159,33 +1838,7 @@ function CreateRoomCompleteSheet({
   onClose: () => void;
   onOpenRoom: (roomId: string) => void;
 }) {
-  const [copiedLabel, setCopiedLabel] = useState('');
-  const inviteLink = typeof window === 'undefined'
-    ? `/rooms/${room.id}?invite=${room.inviteCode}`
-    : `${window.location.origin}/rooms/${room.id}?invite=${room.inviteCode}`;
   const ownerMember = room.members.find((member) => member.role === 'owner');
-
-  const copyText = async (text: string, label: string) => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-
-      setCopiedLabel(`${label}를 복사했습니다.`);
-    } catch {
-      setCopiedLabel('복사하지 못했습니다. 다시 시도해주세요.');
-    }
-  };
 
   return (
     <Sheet open={open} title="방 생성 완료" description="참여자에게 초대 정보를 공유하세요." onClose={onClose}>
@@ -2195,27 +1848,9 @@ function CreateRoomCompleteSheet({
           <p className="mt-1 text-sm text-gray-500">내 닉네임: {ownerMember?.nickname ?? '-'}</p>
           <p className="mt-1 text-sm text-gray-500">내 권한: 방장</p>
         </Card>
-        <Card className="space-y-3">
-          <p className="text-xs font-bold text-gray-400">초대 코드</p>
-          <div className="flex items-center justify-between rounded-xl bg-gray-50 p-3">
-            <span className="font-black text-gray-950">{room.inviteCode}</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="text-xs font-bold text-app-blue"
-                onClick={() => copyText(room.inviteCode, '초대 코드')}
-              >
-                복사하기
-              </button>
-              <button type="button" aria-label="초대 코드 복사" onClick={() => copyText(room.inviteCode, '초대 코드')}>
-                <Copy className="h-4 w-4 text-app-blue" />
-              </button>
-            </div>
-          </div>
-          <Button type="button" className="w-full" onClick={() => copyText(inviteLink, '초대 링크')}>
-            초대 링크 복사
-          </Button>
-          {copiedLabel ? <p className="text-xs font-semibold text-app-blue">{copiedLabel}</p> : null}
+        <Card className="space-y-2">
+          <p className="text-sm font-bold text-gray-900">초대 링크는 방 메뉴에서 발급할 수 있습니다.</p>
+          <p className="text-xs text-gray-500">권한, 만료 일시, 사용 횟수를 지정한 뒤 필요한 사람에게만 공유하세요.</p>
         </Card>
         <Card className="space-y-2 text-sm text-gray-600">
           <p><span className="font-bold text-gray-900">기본 보기:</span> {room.defaultView === 'week' ? '주간' : '월간'}</p>
@@ -2283,7 +1918,7 @@ function JoinRoomSheet({
     <Sheet
       open={open}
       title="스케줄링 방 참여"
-      description="초대 코드 또는 링크를 입력하세요."
+      description="발급받은 제한형 초대 링크를 입력하세요."
       onClose={onClose}
       footer={
         <div className="grid grid-cols-2 gap-3">
@@ -2294,7 +1929,7 @@ function JoinRoomSheet({
     >
       <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
         <Field
-          label="초대 코드 또는 링크"
+          label="초대 링크"
           name="invite"
           value={invite}
           onChange={(event) => {
@@ -2302,19 +1937,20 @@ function JoinRoomSheet({
             setPreview(null);
             setMessage('');
           }}
-          placeholder="A7K9-D2"
+          placeholder="https://example.com/join/..."
           required
         />
         <Button type="button" variant="outline" className="w-full" onClick={handlePreview} disabled={!invite.trim() || isPreviewing}>
-          {isPreviewing ? '코드 확인 중' : '코드 확인'}
+          {isPreviewing ? '링크 확인 중' : '링크 확인'}
         </Button>
         {preview ? (
           <Card>
-            <p className="font-black text-gray-950">{preview.name}</p>
-            <p className="mt-1 text-sm text-gray-500">{preview.description ?? '방 설명이 없습니다.'}</p>
+            <p className="font-black text-gray-950">{preview.roomName}</p>
+            <p className="mt-1 text-sm text-gray-500">{preview.roomDescription ?? '방 설명이 없습니다.'}</p>
             <p className="mt-2 text-xs font-semibold text-gray-500">
-              방장: {preview.ownerNickname} · 참여자 {preview.memberCount}명
+              초대한 사람: {preview.inviterDisplayName} · 권한: {preview.grantRole === 'viewer' ? '보기 전용' : '구성원'}
             </p>
+            <p className="mt-1 text-xs text-gray-500">만료: {new Date(preview.expiresAt).toLocaleString('ko-KR')}</p>
           </Card>
         ) : null}
         <Field label="방에서 사용할 닉네임" name="nickname" placeholder="민수" required />
@@ -2361,7 +1997,7 @@ function RoomMenuSheet({
     ...(isOwner ? [{ label: '방 일정 관리', icon: CalendarPlus, onClick: onManagement }] : []),
     ...(isOwner ? [{ label: '방장 위임', icon: Crown, onClick: onTransfer }] : []),
     ...(isOwner ? [{ label: '방 설정', icon: Settings, onClick: onInfo }] : []),
-    ...(isOwner ? [{ label: '초대 정보', icon: KeyRound, onClick: onInvite }] : []),
+    ...(isOwner || isManager ? [{ label: '초대 링크 관리', icon: KeyRound, onClick: onInvite }] : []),
     ...(isOwner ? [{ label: '방 삭제', icon: Trash2, onClick: onDelete, danger: true }] : []),
     ...(!isOwner ? [{ label: '방 정보', icon: Settings, onClick: onInfo }] : []),
     ...(!isOwner ? [{ label: '내 권한 보기', icon: Shield, onClick: onInfo }] : []),
@@ -2976,109 +2612,6 @@ function PreliminaryTaskSheet({
         </div>
         <Field label="예정일" name="dueDate" type="date" defaultValue={task?.dueDate ?? ''} />
       </form>
-    </Sheet>
-  );
-}
-
-function AdminAddUserSheet({
-  open,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (values: AdminUserFormValues) => Promise<{ ok: boolean; message: string }>;
-}) {
-  const formId = 'admin-add-user-form';
-  const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [message, setMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMessage('');
-    setIsSubmitting(true);
-
-    const formData = new FormData(event.currentTarget);
-    const result = await onSubmit({
-      loginId: String(formData.get('loginId') ?? ''),
-      email: String(formData.get('email') ?? ''),
-      password: String(formData.get('password') ?? ''),
-      passwordConfirm: String(formData.get('passwordConfirm') ?? ''),
-      name: String(formData.get('name') ?? ''),
-      phone: String(formData.get('phone') ?? ''),
-      isServiceAdmin: role === 'admin',
-    });
-
-    if (!result.ok) {
-      setMessage(result.message);
-    }
-
-    setIsSubmitting(false);
-  };
-
-  return (
-    <Sheet
-      open={open}
-      title="계정 추가"
-      description="서버 전용 관리자 API로 서비스 계정을 생성합니다."
-      onClose={onClose}
-      footer={
-        <div className="grid grid-cols-2 gap-3">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>취소</Button>
-          <Button type="submit" form={formId} disabled={isSubmitting}>{isSubmitting ? '생성 중' : '계정 생성'}</Button>
-        </div>
-      }
-    >
-      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
-        <Field label="로그인 아이디" name="loginId" placeholder="user01" required />
-        <Field label="이메일" name="email" type="email" placeholder="선택 입력 이메일" />
-        <Field label="초기 비밀번호" name="password" type="password" placeholder="12자 이상, 대소문자·숫자·특수문자 포함" required />
-        <Field label="비밀번호 확인" name="passwordConfirm" type="password" required />
-        <Field label="이름" name="name" placeholder="김민수" required />
-        <Field label="전화번호" name="phone" placeholder="010-0000-0000" />
-        <div className="grid grid-cols-2 gap-3">
-          <Button type="button" variant={role === 'user' ? 'secondary' : 'outline'} onClick={() => setRole('user')}>일반 사용자</Button>
-          <Button type="button" variant={role === 'admin' ? 'secondary' : 'outline'} onClick={() => setRole('admin')}>서비스 관리자</Button>
-        </div>
-        {message ? <p className="text-xs font-semibold text-app-danger">{message}</p> : null}
-      </form>
-    </Sheet>
-  );
-}
-
-function InviteInfoSheet({
-  open,
-  room,
-  onClose,
-  onRegenerate,
-}: {
-  open: boolean;
-  room: SchedulingRoom;
-  onClose: () => void;
-  onRegenerate: () => void;
-}) {
-  const [message, setMessage] = useState('');
-  const copyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(room.inviteCode);
-      setMessage('초대 코드를 복사했습니다.');
-    } catch {
-      setMessage('복사하지 못했습니다. 코드를 직접 선택해주세요.');
-    }
-  };
-
-  return (
-    <Sheet open={open} title="초대 정보" onClose={onClose}>
-      <Card className="space-y-3">
-        <p className="text-xs font-bold text-gray-400">초대 코드</p>
-        <button type="button" className="flex w-full items-center justify-between rounded-xl bg-gray-50 p-3 text-left" onClick={copyCode}>
-          <span className="font-black text-gray-950">{room.inviteCode}</span>
-          <Copy className="h-4 w-4 text-app-blue" />
-        </button>
-        <Button type="button" className="w-full" onClick={onRegenerate}>초대 코드 재생성</Button>
-        {message ? <p className="text-xs font-semibold text-app-blue">{message}</p> : null}
-      </Card>
     </Sheet>
   );
 }

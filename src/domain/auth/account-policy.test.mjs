@@ -5,6 +5,7 @@ import {
   canAccessAccountArea,
   evaluateSessionAge,
   hasRecentAuthentication,
+  hasRecentRecoverySession,
 } from "./account-policy.ts";
 
 const now = new Date("2026-07-18T12:00:00.000Z");
@@ -93,4 +94,11 @@ test("sensitive mutations require authentication within ten minutes", () => {
   assert.equal(hasRecentAuthentication(new Date("2026-07-18T11:49:59.999Z"), now), false);
   assert.equal(hasRecentAuthentication(new Date("2026-07-18T12:00:01.000Z"), now), false);
   assert.equal(hasRecentAuthentication(undefined, now), false);
+});
+
+test("recovery reauthentication requires a fresh OTP session issued after the recovery request", () => {
+  const recoveryNow = new Date("2026-07-18T12:10:00.000Z");
+  assert.equal(hasRecentRecoverySession({ recoverySentAt: "2026-07-18T12:03:00.000Z", issuedAtSeconds: Date.parse("2026-07-18T12:04:00.000Z") / 1000, methods: ["otp"], now: recoveryNow }), true);
+  assert.equal(hasRecentRecoverySession({ recoverySentAt: "2026-07-18T12:03:00.000Z", issuedAtSeconds: Date.parse("2026-07-18T12:02:00.000Z") / 1000, methods: ["otp"], now: recoveryNow }), false);
+  assert.equal(hasRecentRecoverySession({ recoverySentAt: "2026-07-18T12:03:00.000Z", issuedAtSeconds: Date.parse("2026-07-18T12:04:00.000Z") / 1000, methods: ["password"], now: recoveryNow }), false);
 });

@@ -62,6 +62,7 @@ const SERVICE_CAPABILITY_MATRIX: Record<ServiceRole, readonly ServiceCapability[
     "user_room.read",
     "restriction.manage",
     "report_sanction.manage",
+    "inquiry.read_metadata",
     "audit.read_operations",
     "ip_block.release",
   ],

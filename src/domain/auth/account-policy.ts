@@ -94,3 +94,19 @@ export function hasRecentAuthentication(authenticatedAt: unknown, now = new Date
   if (authenticated === null || current === null || authenticated > current) return false;
   return current - authenticated <= TEN_MINUTES_MS;
 }
+
+export function hasRecentRecoverySession(input: {
+  recoverySentAt: unknown;
+  issuedAtSeconds: unknown;
+  methods: readonly string[];
+  now?: Date;
+}): boolean {
+  const sentAt = toValidTime(input.recoverySentAt);
+  const issuedAt = typeof input.issuedAtSeconds === 'number' ? input.issuedAtSeconds * 1000 : Number.NaN;
+  const current = toValidTime(input.now ?? new Date());
+  if (sentAt === null || current === null || !Number.isFinite(issuedAt)) return false;
+  return input.methods.includes('otp')
+    && issuedAt >= sentAt
+    && issuedAt <= current
+    && current - issuedAt <= TEN_MINUTES_MS;
+}

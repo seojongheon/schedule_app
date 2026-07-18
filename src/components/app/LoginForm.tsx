@@ -78,9 +78,11 @@ export function LoginForm() {
                 type="text"
                 placeholder="이메일을 입력하세요"
                 className="h-12 w-full rounded-xl border border-app-border px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+                aria-invalid={errors.account ? true : undefined}
+                aria-describedby={errors.account ? 'account-error' : undefined}
                 {...register('account')}
               />
-              {errors.account ? <p className="mt-2 text-xs font-medium text-app-danger">{errors.account.message}</p> : null}
+              {errors.account ? <p id="account-error" role="alert" className="mt-2 text-xs font-medium text-app-danger">{errors.account.message}</p> : null}
             </div>
 
             <div>
@@ -93,18 +95,20 @@ export function LoginForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="비밀번호를 입력하세요"
                   className="h-12 w-full rounded-xl border border-app-border px-3 pr-12 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={errors.password ? 'password-error' : undefined}
                   {...register('password')}
                 />
                 <button
                   type="button"
-                  className="absolute right-1 top-0 flex h-12 w-11 items-center justify-center text-gray-400"
+                  className="absolute right-1 top-0 flex h-12 w-11 items-center justify-center rounded-lg text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-app-blue"
                   onClick={() => setShowPassword((previous) => !previous)}
                   aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              {errors.password ? <p className="mt-2 text-xs font-medium text-app-danger">{errors.password.message}</p> : null}
+              {errors.password ? <p id="password-error" role="alert" className="mt-2 text-xs font-medium text-app-danger">{errors.password.message}</p> : null}
             </div>
 
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -123,14 +127,14 @@ export function LoginForm() {
           </Card>
 
           {error ? (
-            <div className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-app-danger">
+            <div role="alert" aria-live="assertive" className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-app-danger">
               {error}
             </div>
           ) : null}
 
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            로그인
+            {isSubmitting ? '로그인 중…' : '로그인'}
           </Button>
 
           <Card className="space-y-3 text-center text-sm text-gray-600">

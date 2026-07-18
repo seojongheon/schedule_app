@@ -3,10 +3,16 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{8,128}$/;
 const SAFE_CSRF_TOKEN = /^[A-Za-z0-9._~-]{16,256}$/;
+const generatedRequestIds = new WeakMap<Request, string>();
 
 export function getOrCreateRequestId(request: Request): string {
   const supplied = request.headers.get('x-request-id');
-  return supplied && SAFE_REQUEST_ID.test(supplied) ? supplied : randomUUID();
+  if (supplied && SAFE_REQUEST_ID.test(supplied)) return supplied;
+  const existing = generatedRequestIds.get(request);
+  if (existing) return existing;
+  const generated = randomUUID();
+  generatedRequestIds.set(request, generated);
+  return generated;
 }
 
 export function assertSameOrigin(request: Request, allowedOrigins: readonly string[]): void {

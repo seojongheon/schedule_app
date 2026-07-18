@@ -3,8 +3,9 @@ import { hasRecentAuthentication } from '@/domain/auth/account-policy';
 import { createProviderRegistry, requireExplicitIdentityLink, type SocialProvider } from '@/lib/auth/provider-registry';
 import { loadSecurityConfig } from '@/lib/security-config';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { withSensitiveRateLimit } from '@/lib/rate-limit/with-rate-limit';
 
-export async function GET(request: Request, context: { params: Promise<{ provider: string }> }) {
+async function getHandler(request: Request, context: { params: Promise<{ provider: string }> }) {
   const { provider } = await context.params;
   if (!['google', 'kakao', 'naver'].includes(provider)) return NextResponse.redirect(new URL('/login?provider=invalid', request.url));
   const mode = new URL(request.url).searchParams.get('mode') === 'link' ? 'link' : 'signin';
@@ -36,3 +37,5 @@ export async function GET(request: Request, context: { params: Promise<{ provide
   response.cookies.set('auth_flow_mode', `${mode}:${provider}`, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 600, path: '/' });
   return response;
 }
+
+export const GET = withSensitiveRateLimit(getHandler);

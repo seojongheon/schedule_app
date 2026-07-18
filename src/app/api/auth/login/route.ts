@@ -4,6 +4,7 @@ import { assertSameOrigin, getOrCreateRequestId } from '@/lib/request-security';
 import { enforceSensitiveLimit } from '@/lib/rate-limit/rate-limit-service';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { privacyLoginDestination } from '@/domain/privacy/privacy-request';
 
 const GENERIC_FAILURE = '이메일 또는 비밀번호를 확인해주세요.';
 
@@ -27,16 +28,16 @@ export async function POST(request: Request) {
       .single();
     const securityProfile = profile as { account_state: string } | null;
     const accountState = securityProfile?.account_state ?? 'pending_profile';
-    if (['suspended', 'deletion_pending', 'deleted'].includes(accountState)) {
+    const next = privacyLoginDestination(accountState);
+    if (!next) {
       await supabase.auth.signOut({ scope: 'global' });
       return NextResponse.json({ message: GENERIC_FAILURE, requestId }, { status: 401 });
     }
-    const now = new Date().toISOString();
-    const profiles = supabase.from('profiles') as unknown as {
-      update(values: Record<string, unknown>): { eq(column: string, value: string): Promise<unknown> };
-    };
-    await profiles.update({ session_started_at: now, last_seen_at: now, last_reauthenticated_at: now }).eq('id', data.user.id);
     const admin = createSupabaseAdminClient();
+    const { error: sessionError } = await admin.rpc('record_verified_authentication', {
+      p_actor_user_id: data.user.id, p_request_id: requestId,
+    });
+    if (sessionError) { await supabase.auth.signOut({ scope: 'global' }); throw sessionError; }
     const { error: auditError } = await admin.rpc('append_audit_event', {
       p_event_type: 'account.login', p_actor_type: 'user', p_actor_key: data.user.id,
       p_target_type: 'account', p_target_key: data.user.id, p_result: 'success',
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     });
     if (auditError) { await supabase.auth.signOut({ scope: 'global' }); throw auditError; }
     return NextResponse.json({
-      next: accountState === 'active' ? '/dashboard' : '/auth/complete-profile',
+      next,
       accountState,
       requestId,
     });

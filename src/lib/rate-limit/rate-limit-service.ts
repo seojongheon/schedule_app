@@ -1,44 +1,146 @@
-import { setTimeout as delay } from 'node:timers/promises';
-import { computeExactMatchHmac } from '@/lib/privacy/encryption';
-import { resolveClientIp } from '@/lib/rate-limit/client-ip';
-import { loadSecurityConfig } from '@/lib/security-config';
-import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { setTimeout as nodeSleep } from 'node:timers/promises';
+import { computeExactMatchHmac } from '../privacy/encryption.ts';
+import { resolveClientIp } from './client-ip.ts';
+import type { TrustedProxyMode } from '../security-config.ts';
+import { loadSecurityConfig } from '../security-config.ts';
 
-type Decision = { action: 'allow' | 'delay' | 'reject' | 'block'; delay_ms?: number; retry_after?: number };
+export type RateLimitScope = 'general_ip' | 'sensitive_ip' | 'login_account';
+export type RateLimitDecision = {
+  action: 'allow' | 'delay' | 'reject' | 'block';
+  count: number;
+  limit: number;
+  delayMs?: number;
+  retryAfterSeconds: number | null;
+  resetAt: string;
+};
+export type RateLimitStore = {
+  evaluate(input: { scope: RateLimitScope; subjectKey: string; policy: 'general' | 'sensitive'; requestId: string }): Promise<RateLimitDecision>;
+};
 
-async function evaluate(scope: string, subjectKey: string, policy: string, requestId: string): Promise<Decision> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin.rpc('evaluate_request_limit', {
-    p_scope: scope,
-    p_subject_key: subjectKey,
-    p_policy: policy,
-    p_request_id: requestId,
-  });
-  if (error) throw error;
-  return data as Decision;
-}
-
-async function enforceDecision(decision: Decision): Promise<void> {
-  if (decision.action === 'delay') await delay(Math.min(Math.max(decision.delay_ms ?? 1000, 1000), 3000));
-  if (decision.action === 'reject' || decision.action === 'block') {
-    const error = new Error('Request rate limit exceeded.') as Error & { retryAfter: number };
-    error.retryAfter = decision.retry_after ?? 60;
-    throw error;
+export class RateLimitError extends Error {
+  readonly status = 429;
+  readonly retryAfter: number;
+  readonly headers: Record<string, string>;
+  constructor(headers: Record<string, string>, action: 'reject' | 'block') {
+    super(`Request ${action}ed by rate control.`);
+    this.name = 'RateLimitError';
+    this.headers = headers;
+    this.retryAfter = Number(headers['Retry-After']);
   }
 }
 
-export async function enforceSensitiveLimit(input: {
-  request: Request;
-  requestId: string;
-  accountIdentifier?: string;
-}): Promise<void> {
+function decisionHeaders(decision: RateLimitDecision): Record<string, string> {
+  return {
+    'RateLimit-Limit': String(decision.limit),
+    'RateLimit-Remaining': String(Math.max(0, decision.limit - decision.count)),
+    'RateLimit-Reset': decision.resetAt,
+    ...(decision.retryAfterSeconds === null ? {} : { 'Retry-After': String(decision.retryAfterSeconds) }),
+  };
+}
+
+export function createRateLimitService(dependencies: {
+  store: RateLimitStore;
+  hmacKey: string;
+  trustedProxyMode: TrustedProxyMode;
+  directIp?: string;
+  production?: boolean;
+  sleep: (milliseconds: number) => Promise<unknown>;
+}) {
+  async function evaluate(scope: RateLimitScope, policy: 'general' | 'sensitive', value: string, requestId: string) {
+    const subjectKey = computeExactMatchHmac(value, dependencies.hmacKey);
+    const decision = await dependencies.store.evaluate({ scope, subjectKey, policy, requestId });
+    const headers = decisionHeaders(decision);
+    if (decision.action === 'delay') {
+      await dependencies.sleep(Math.min(3000, Math.max(1000, decision.delayMs ?? 1000)));
+    }
+    if (decision.action === 'reject' || decision.action === 'block') {
+      throw new RateLimitError(headers, decision.action);
+    }
+    return { decision, headers };
+  }
+
+  return {
+    async check(input: { request: Request; requestId: string; kind: 'general' | 'sensitive' | 'login'; accountIdentifier?: string }) {
+      const ip = resolveClientIp({
+        headers: input.request.headers,
+        trustedProxyMode: dependencies.trustedProxyMode,
+        directIp: dependencies.directIp,
+        production: dependencies.production ?? process.env.NODE_ENV === 'production',
+      });
+      const kind = input.kind === 'general' ? 'general' : 'sensitive';
+      const ipResult = await evaluate(input.kind === 'general' ? 'general_ip' : 'sensitive_ip', kind, `ip:${ip}`, input.requestId);
+      if (input.kind === 'login') {
+        if (!input.accountIdentifier) throw new Error('Login request control requires an account identifier.');
+        return evaluate('login_account', 'sensitive', `account:${input.accountIdentifier}`, input.requestId);
+      }
+      return ipResult;
+    },
+  };
+}
+
+const databaseStore: RateLimitStore = {
+  async evaluate(input) {
+    const { createSupabaseAdminClient } = await import('@/lib/supabase/admin');
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.rpc('evaluate_request_limit', {
+      p_scope: input.scope,
+      p_subject_key: input.subjectKey,
+      p_policy: input.policy,
+      p_request_id: input.requestId,
+    });
+    if (error) throw error;
+    return mapDatabaseDecision(data as DatabaseDecision, input.policy);
+  },
+};
+
+type DatabaseDecision = {
+  action: RateLimitDecision['action'];
+  delay_ms?: number;
+  retry_after?: number;
+  count?: number;
+  limit?: number;
+  window_seconds?: number;
+};
+
+export function mapDatabaseDecision(
+  result: DatabaseDecision,
+  policy: 'general' | 'sensitive',
+  now = new Date(),
+): RateLimitDecision {
+  const fallbackLimit = policy === 'general' ? 120 : 20;
+  const fallbackWindow = policy === 'general' ? 60 : 300;
+  const limit = Number.isInteger(result.limit) && Number(result.limit) > 0 ? Number(result.limit) : fallbackLimit;
+  const windowSeconds = Number.isInteger(result.window_seconds) && Number(result.window_seconds) > 0
+    ? Number(result.window_seconds)
+    : fallbackWindow;
+  const retryAfterSeconds = result.retry_after ?? null;
+  return {
+    action: result.action,
+    count: result.count ?? (result.action === 'allow' ? 1 : limit + 1),
+    limit,
+    delayMs: result.delay_ms,
+    retryAfterSeconds,
+    resetAt: new Date(now.getTime() + (retryAfterSeconds ?? windowSeconds) * 1000).toISOString(),
+  };
+}
+
+export async function enforceSensitiveLimit(input: { request: Request; requestId: string; accountIdentifier?: string }) {
   const config = loadSecurityConfig();
   if (!config.securityHmacKey) throw new Error('SECURITY_HMAC_KEY is required for request control.');
-  const ip = resolveClientIp(input.request, config.trustedProxyMode);
-  const ipKey = computeExactMatchHmac(`ip:${ip}`, config.securityHmacKey);
-  await enforceDecision(await evaluate('sensitive_ip', ipKey, 'sensitive', input.requestId));
-  if (input.accountIdentifier) {
-    const accountKey = computeExactMatchHmac(`account:${input.accountIdentifier}`, config.securityHmacKey);
-    await enforceDecision(await evaluate('login_account', accountKey, 'sensitive', input.requestId));
-  }
+  const service = createRateLimitService({
+    store: databaseStore,
+    hmacKey: config.securityHmacKey,
+    trustedProxyMode: config.trustedProxyMode,
+    sleep: nodeSleep,
+  });
+  return service.check({ ...input, kind: input.accountIdentifier ? 'login' : 'sensitive' });
+}
+
+export async function enforceGeneralLimit(input: { request: Request; requestId: string }) {
+  const config = loadSecurityConfig();
+  if (!config.securityHmacKey) throw new Error('SECURITY_HMAC_KEY is required for request control.');
+  return createRateLimitService({
+    store: databaseStore, hmacKey: config.securityHmacKey,
+    trustedProxyMode: config.trustedProxyMode, sleep: nodeSleep,
+  }).check({ ...input, kind: 'general' });
 }

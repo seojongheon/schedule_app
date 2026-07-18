@@ -12,7 +12,9 @@ test("request IDs preserve safe correlation IDs and replace malformed input", ()
   assert.equal(getOrCreateRequestId(safe), "req_12345678");
 
   const malformed = new Request("https://service.example/api/test", { headers: { "x-request-id": "../../secret:value" } });
-  assert.match(getOrCreateRequestId(malformed), /^[0-9a-f-]{36}$/);
+  const generated = getOrCreateRequestId(malformed);
+  assert.match(generated, /^[0-9a-f-]{36}$/);
+  assert.equal(getOrCreateRequestId(malformed), generated);
 });
 
 test("unsafe browser requests require an exact allowed origin", () => {

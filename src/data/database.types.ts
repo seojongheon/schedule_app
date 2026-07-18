@@ -50,6 +50,7 @@ export interface Database {
           last_reauthenticated_at: string | null;
           deletion_requested_at: string | null;
           deletion_due_at: string | null;
+          deletion_subject_key: string | null;
         };
         Insert: {
           id: string;
@@ -73,6 +74,7 @@ export interface Database {
           last_reauthenticated_at?: string | null;
           deletion_requested_at?: string | null;
           deletion_due_at?: string | null;
+          deletion_subject_key?: string | null;
         };
         Update: {
           email?: string;
@@ -95,6 +97,7 @@ export interface Database {
           last_reauthenticated_at?: string | null;
           deletion_requested_at?: string | null;
           deletion_due_at?: string | null;
+          deletion_subject_key?: string | null;
         };
         Relationships: [];
       };
@@ -423,8 +426,12 @@ export interface Database {
       }>;
       admin_notifications: GeneratedTable<{
         id: string; audience_role: 'support_admin' | 'operations_admin' | 'super_admin';
-        type: 'new_inquiry' | 'aging_inquiry' | 'security_alert' | 'job_failure';
+        type: 'new_inquiry' | 'inquiry_reply' | 'aging_inquiry' | 'security_alert' | 'job_failure';
         target_type: string; target_id: string; read_by_user_ids: string[]; created_at: string;
+      }>;
+      user_notifications: GeneratedTable<{
+        id: string; user_id: string; type: 'inquiry_reply' | 'inquiry_status';
+        target_type: 'inquiry'; target_id: string; read_at: string | null; created_at: string;
       }>;
       reports: GeneratedTable<{
         id: string; reporter_user_id: string; target_type: 'account' | 'room'; target_id: string;
@@ -478,14 +485,6 @@ export interface Database {
         };
         Returns: Json;
       };
-      join_room_by_invite: {
-        Args: {
-          p_code: string;
-          p_nickname: string;
-          p_color: string;
-        };
-        Returns: Json;
-      };
       set_room_manager_role: {
         Args: {
           p_room_id: string;
@@ -531,22 +530,24 @@ export interface Database {
       };
       has_service_capability: { Args: { p_capability: string }; Returns: boolean };
       is_active_account: { Args: { p_user_id?: string }; Returns: boolean };
+      record_verified_authentication: { Args: { p_actor_user_id: string; p_request_id: string }; Returns: undefined };
+      touch_session_activity: { Args: { p_actor_user_id: string }; Returns: undefined };
       create_room_invite: {
-        Args: { p_room_id: string; p_token_hash: string; p_token_hint: string; p_grant_role: string;
-          p_expires_at: string; p_max_uses: number; p_request_id: string };
-        Returns: string;
+        Args: { p_actor_user_id: string; p_room_id: string; p_token_hash: string; p_token_hint: string; p_grant_role: string;
+          p_expires_at: string; p_max_uses: number; p_ip_key: string; p_request_id: string };
+        Returns: string | null;
       };
       revoke_room_invite: {
-        Args: { p_invite_id: string; p_reason: string; p_request_id: string };
-        Returns: undefined;
+        Args: { p_actor_user_id: string; p_room_id: string; p_invite_id: string; p_reason: string; p_ip_key: string; p_request_id: string };
+        Returns: boolean;
       };
       replace_room_invite: {
-        Args: { p_invite_id: string; p_token_hash: string; p_token_hint: string;
-          p_expires_at: string; p_max_uses: number; p_reason: string; p_request_id: string };
-        Returns: string;
+        Args: { p_actor_user_id: string; p_room_id: string; p_invite_id: string; p_token_hash: string; p_token_hint: string;
+          p_expires_at: string; p_max_uses: number; p_reason: string; p_ip_key: string; p_request_id: string };
+        Returns: string | null;
       };
       redeem_room_invite: {
-        Args: { p_token_hash: string; p_nickname: string; p_color: string;
+        Args: { p_actor_user_id: string; p_token_hash: string; p_nickname: string; p_color: string;
           p_ip_key: string; p_request_id: string };
         Returns: Json;
       };
@@ -571,6 +572,65 @@ export interface Database {
           p_target_type: string; p_target_key: string; p_result: string;
           p_reason_code: string; p_request_id: string; p_metadata?: Json;
         };
+        Returns: string;
+      };
+      list_support_inquiry_metadata: {
+        Args: { p_actor_user_id: string; p_offset: number; p_limit: number; p_request_id: string };
+        Returns: Json;
+      };
+      create_support_inquiry: {
+        Args: {
+          p_inquiry_id: string; p_actor_user_id: string; p_category: string; p_subject: string;
+          p_body_ciphertext: string; p_body_iv: string; p_body_auth_tag: string;
+          p_key_version: number; p_request_id: string;
+        };
+        Returns: Json;
+      };
+      read_support_inquiry_content: {
+        Args: { p_inquiry_id: string; p_actor_user_id: string; p_request_id: string };
+        Returns: Json;
+      };
+      claim_support_inquiry: {
+        Args: { p_inquiry_id: string; p_actor_user_id: string; p_request_id: string };
+        Returns: Json;
+      };
+      reply_support_inquiry: {
+        Args: {
+          p_message_id: string; p_inquiry_id: string; p_actor_user_id: string;
+          p_body_ciphertext: string; p_body_iv: string; p_body_auth_tag: string;
+          p_key_version: number; p_request_id: string;
+        };
+        Returns: Json;
+      };
+      change_support_inquiry_status: {
+        Args: { p_inquiry_id: string; p_actor_user_id: string; p_status: string; p_request_id: string };
+        Returns: Json;
+      };
+      enqueue_aging_inquiry_notifications: {
+        Args: { p_cutoff: string; p_request_id: string };
+        Returns: number;
+      };
+      export_private_profile: {
+        Args: { p_request_id: string };
+        Returns: Array<{
+          phone_ciphertext: string | null; phone_iv: string | null; phone_auth_tag: string | null;
+          birth_date_ciphertext: string | null; birth_date_iv: string | null; birth_date_auth_tag: string | null;
+          key_version: number;
+        }>;
+      };
+      correct_private_profile_phone: {
+        Args: {
+          p_phone_ciphertext: string | null; p_phone_iv: string | null; p_phone_auth_tag: string | null;
+          p_phone_lookup_hash: string | null; p_key_version: number; p_request_id: string;
+        };
+        Returns: undefined;
+      };
+      begin_account_withdrawal: {
+        Args: { p_subject_key: string; p_request_id: string };
+        Returns: string;
+      };
+      cancel_account_withdrawal: {
+        Args: { p_subject_key: string; p_request_id: string };
         Returns: string;
       };
     };

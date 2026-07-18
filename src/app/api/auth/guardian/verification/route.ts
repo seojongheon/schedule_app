@@ -3,8 +3,9 @@ import { createGuardianVerificationAdapter } from '@/lib/auth/guardian-verificat
 import { assertSameOrigin, getOrCreateRequestId } from '@/lib/request-security';
 import { loadSecurityConfig } from '@/lib/security-config';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { withSensitiveRateLimit } from '@/lib/rate-limit/with-rate-limit';
 
-export async function POST(request: Request) {
+async function postHandler(request: Request) {
   const requestId = getOrCreateRequestId(request);
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin;
@@ -38,3 +39,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: '보호자 인증을 처리할 수 없습니다.', requestId }, { status: 400 });
   }
 }
+
+export const POST = withSensitiveRateLimit(postHandler);

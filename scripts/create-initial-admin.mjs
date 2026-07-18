@@ -180,6 +180,8 @@ async function main() {
       phone,
       is_service_admin: true,
       status: 'active',
+      display_name: name,
+      account_state: 'active',
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' },
@@ -187,6 +189,31 @@ async function main() {
 
   if (profileError) {
     throw profileError;
+  }
+
+  const { data: existingRole, error: roleLookupError } = await admin
+    .from('service_role_assignments')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('role', 'super_admin')
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (roleLookupError) {
+    throw roleLookupError;
+  }
+
+  if (!existingRole) {
+    const { error: roleError } = await admin.from('service_role_assignments').insert({
+      user_id: user.id,
+      role: 'super_admin',
+      granted_by_user_id: user.id,
+      reason: 'Controlled initial administrator bootstrap',
+    });
+
+    if (roleError) {
+      throw roleError;
+    }
   }
 
   console.log(`Initial service admin is ready: ${loginId} (${email})`);

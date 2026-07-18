@@ -81,10 +81,10 @@
 
 - [x] T032 [P] [US2] Write failing token, preview, status, role-grant, and idempotency tests in src/domain/invites/invite-policy.test.mjs
 - [x] T033 [US2] Implement opaque-token generation, hashing, preview projection, and result mapping in src/domain/invites/invite-policy.ts
-- [ ] T034 [P] [US2] Write failing invitation repository and route contract tests in src/data/repositories/invite-repository.test.mjs
+- [x] T034 [P] [US2] Write failing invitation repository and route contract tests in src/data/repositories/invite-repository.test.mjs
 - [x] T035 [US2] Implement invitation repository calls to transactional functions in src/data/repositories/invite-repository.ts
-- [ ] T036 [US2] Implement create, preview, redeem, revoke, and replace endpoints in src/app/api/rooms/[roomId]/invites/route.ts and src/app/api/invites/[token]/route.ts
-- [ ] T037 [US2] Implement invite-preview and join UI plus room invitation controls in src/app/join/[token]/page.tsx and src/components/app/RoomInvitePanel.tsx
+- [x] T036 [US2] Implement create, preview, redeem, revoke, and replace endpoints in src/app/api/rooms/[roomId]/invites/route.ts and src/app/api/invites/[token]/route.ts
+- [x] T037 [US2] Implement invite-preview and join UI plus room invitation controls in src/app/join/[token]/page.tsx and src/components/app/RoomInvitePanel.tsx
 - [x] T038 [US2] Update room/member domain types and schedule presentation for viewer access in src/domain/entities.ts and src/components/app/ScheduleWorkspace.tsx
 - [ ] T039 [US2] Run invitation unit, contract, SQL concurrency, and safe-preview checks and record results in specs/002-commercial-readiness/validation.md
 
@@ -98,13 +98,13 @@
 
 **Independent Test**: Submit, claim, read, reply, answer, and close inquiries across allowed and denied user and service roles.
 
-- [ ] T040 [P] [US3] Write failing inquiry transition and category-by-account-state tests in src/domain/support/inquiry-policy.test.mjs
-- [ ] T041 [US3] Implement inquiry status, category, actor, and transition policy in src/domain/support/inquiry-policy.ts
-- [ ] T042 [P] [US3] Write failing inquiry encryption, ownership, assignment, and first-read audit repository tests in src/data/repositories/inquiry-repository.test.mjs
-- [ ] T043 [US3] Implement encrypted inquiry and notification repository in src/data/repositories/inquiry-repository.ts
-- [ ] T044 [US3] Implement user and staff inquiry routes in src/app/api/inquiries/route.ts and src/app/api/inquiries/[inquiryId]/route.ts
-- [ ] T045 [US3] Implement inquiry list, detail, composition, reply, and status UI in src/app/support/page.tsx, src/app/support/[inquiryId]/page.tsx, and src/components/support/InquiryWorkspace.tsx
-- [ ] T046 [US3] Run focused inquiry privacy and state tests and record results in specs/002-commercial-readiness/validation.md
+- [x] T040 [P] [US3] Write failing inquiry transition and category-by-account-state tests in src/domain/support/inquiry-policy.test.mjs
+- [x] T041 [US3] Implement inquiry status, category, actor, and transition policy in src/domain/support/inquiry-policy.ts
+- [x] T042 [P] [US3] Write failing inquiry encryption, ownership, assignment, and first-read audit repository tests in src/data/repositories/inquiry-repository.test.mjs
+- [x] T043 [US3] Implement encrypted inquiry and notification repository in src/data/repositories/inquiry-repository.ts
+- [x] T044 [US3] Implement user and staff inquiry routes in src/app/api/inquiries/route.ts and src/app/api/inquiries/[inquiryId]/route.ts
+- [x] T045 [US3] Implement inquiry list, detail, composition, reply, and status UI in src/app/support/page.tsx, src/app/support/[inquiryId]/page.tsx, and src/components/support/InquiryWorkspace.tsx
+- [x] T046 [US3] Run focused inquiry privacy and state tests and record results in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Users can resolve support needs without cross-user disclosure, and staff content access is scoped and audited.
 
@@ -116,12 +116,12 @@
 
 **Independent Test**: Exercise the full capability matrix and verify masked, denied, and mutable operations per role.
 
-- [ ] T047 [P] [US4] Write failing administrator route authorization, masking, sanction, and last-super-admin tests in src/domain/authorization/admin-policy.test.mjs
-- [ ] T048 [US4] Implement administrator query scopes, masking, sanctions, and role mutation use cases in src/domain/authorization/admin-policy.ts
-- [ ] T049 [P] [US4] Write failing sanction and role repository transaction tests in src/data/repositories/admin-repository.test.mjs
-- [ ] T050 [US4] Implement scoped users, rooms, reports, sanctions, roles, inquiries, audit, and IP-block repositories in src/data/repositories/admin-repository.ts
-- [ ] T051 [US4] Replace boolean-admin endpoints, add user report submission under src/app/api/reports, and add users, rooms, reports, sanctions, roles, inquiries, audit, and IP-block role-scoped routes under src/app/api/admin while retaining a controlled initial-super-admin compatibility path
-- [ ] T052 [US4] Build PC-first administration navigation and users, rooms, reports, inquiries, sanctions, audit, and IP-block views in src/app/admin/page.tsx and src/components/admin/AdminWorkspace.tsx
+- [x] T047 [P] [US4] Write failing administrator route authorization, masking, sanction, and last-super-admin tests in src/domain/authorization/admin-policy.test.mjs
+- [x] T048 [US4] Implement administrator query scopes, masking, sanctions, and role mutation use cases in src/domain/authorization/admin-policy.ts
+- [x] T049 [P] [US4] Write failing sanction and role repository transaction tests in src/data/repositories/admin-repository.test.mjs
+- [x] T050 [US4] Implement scoped users, rooms, reports, sanctions, roles, inquiries, audit, and IP-block repositories in src/data/repositories/admin-repository.ts
+- [x] T051 [US4] Replace boolean-admin endpoints, add user report submission under src/app/api/reports, and add users, rooms, reports, sanctions, roles, inquiries, audit, and IP-block role-scoped routes under src/app/api/admin while retaining a controlled initial-super-admin compatibility path
+- [x] T052 [US4] Build PC-first administration navigation and users, rooms, reports, inquiries, sanctions, audit, and IP-block views in src/app/admin/page.tsx and src/components/admin/AdminWorkspace.tsx
 - [ ] T053 [US4] Run each role against every administrator route and record matrix results in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: No service role grants room content implicitly, and every mutation is reasoned, recent-reauthenticated where required, and audited.
@@ -134,13 +134,13 @@
 
 **Independent Test**: Drive exact boundary counts across multiple store clients and verify the configured forwarding trust model.
 
-- [ ] T054 [P] [US5] Write failing trusted-proxy and malformed-forwarding tests in src/lib/rate-limit/client-ip.test.mjs
-- [ ] T055 [US5] Implement deployment-specific trusted client IP resolution in src/lib/rate-limit/client-ip.ts
-- [ ] T056 [P] [US5] Write failing shared-store adapter and response-header tests in src/lib/rate-limit/rate-limit-service.test.mjs
-- [ ] T057 [US5] Implement transactional store calls, deterministic injectable delay, headers, and request wrapper in src/lib/rate-limit/rate-limit-service.ts
-- [ ] T058 [US5] Apply general policy to application API routes and sensitive policy to login, recovery, password, and invitation validation through src/lib/rate-limit/with-rate-limit.ts
-- [ ] T059 [US5] Implement authorized manual IP release and automatic expiry reporting in src/app/api/admin/ip-blocks/[blockId]/release/route.ts
-- [ ] T060 [US5] Run exact 90, 120, 121, repeated-excess, account-limit, forged-header, and cross-instance tests and record results in specs/002-commercial-readiness/validation.md
+- [x] T054 [P] [US5] Write failing trusted-proxy and malformed-forwarding tests in src/lib/rate-limit/client-ip.test.mjs
+- [x] T055 [US5] Implement deployment-specific trusted client IP resolution in src/lib/rate-limit/client-ip.ts
+- [x] T056 [P] [US5] Write failing shared-store adapter and response-header tests in src/lib/rate-limit/rate-limit-service.test.mjs
+- [x] T057 [US5] Implement transactional store calls, deterministic injectable delay, headers, and request wrapper in src/lib/rate-limit/rate-limit-service.ts
+- [x] T058 [US5] Apply general policy to application API routes and sensitive policy to login, recovery, password, and invitation validation through src/lib/rate-limit/with-rate-limit.ts
+- [x] T059 [US5] Implement authorized manual IP release and automatic expiry reporting in src/app/api/admin/ip-blocks/[blockId]/release/route.ts
+- [x] T060 [US5] Run exact 90, 120, 121, repeated-excess, account-limit, forged-header, and cross-instance tests and record results in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Request controls match every specified threshold and do not rely on process-local memory or untrusted headers.
 
@@ -152,13 +152,13 @@
 
 **Independent Test**: Encrypt, access, rotate, withdraw, delete, restore, reconcile, and confirm no plaintext or expired data returns.
 
-- [ ] T061 [P] [US6] Write failing privacy access, withdrawal, deletion eligibility, and restore reconciliation tests in src/domain/privacy/privacy-lifecycle.test.mjs
-- [ ] T062 [US6] Implement privacy lifecycle and deletion plan generation in src/domain/privacy/privacy-lifecycle.ts
-- [ ] T063 [P] [US6] Write failing encrypted private-profile repository and key-rotation tests in src/data/repositories/privacy-repository.test.mjs
-- [ ] T064 [US6] Implement authorized decrypt, correction, withdrawal, export, re-encryption, and deletion repository operations in src/data/repositories/privacy-repository.ts
-- [ ] T065 [US6] Implement privacy export, profile correction, withdrawal, and cancellation routes under src/app/api/privacy
-- [ ] T066 [US6] Implement idempotent deletion, retention cleanup, and re-encryption job entry points in scripts/run-privacy-maintenance.mjs
-- [ ] T067 [P] [US6] Implement redacted monitoring and alert event adapters in src/lib/operations/monitoring.ts and write neutral runbooks in docs/operations/auth-providers.md, docs/operations/privacy-retention.md, docs/operations/incident-response.md, and docs/operations/backup-restore.md
+- [x] T061 [P] [US6] Write failing privacy access, withdrawal, deletion eligibility, and restore reconciliation tests in src/domain/privacy/privacy-lifecycle.test.mjs
+- [x] T062 [US6] Implement privacy lifecycle and deletion plan generation in src/domain/privacy/privacy-lifecycle.ts
+- [x] T063 [P] [US6] Write failing encrypted private-profile repository and key-rotation tests in src/data/repositories/privacy-repository.test.mjs
+- [x] T064 [US6] Implement authorized decrypt, correction, withdrawal, export, re-encryption, and deletion repository operations in src/data/repositories/privacy-repository.ts
+- [x] T065 [US6] Implement privacy export, profile correction, withdrawal, and cancellation routes under src/app/api/privacy
+- [x] T066 [US6] Implement idempotent deletion, retention cleanup, and re-encryption job entry points in scripts/run-privacy-maintenance.mjs
+- [x] T067 [P] [US6] Implement redacted monitoring and alert event adapters in src/lib/operations/monitoring.ts and write neutral runbooks in docs/operations/auth-providers.md, docs/operations/privacy-retention.md, docs/operations/incident-response.md, and docs/operations/backup-restore.md
 - [ ] T068 [US6] Run encryption tamper, access audit, rotation, deletion, and isolated restore-reconciliation checks and record results in specs/002-commercial-readiness/validation.md
 
 **Checkpoint**: Privacy rights and recovery are executable, auditable, and fail closed without plaintext leakage.
@@ -169,13 +169,13 @@
 
 **Purpose**: Verify integrated behavior, accessibility, compatibility, and release evidence.
 
-- [ ] T069 [P] Add keyboard, focus, label, live-status, error-association, and contrast improvements across src/components/auth, src/components/support, and src/components/admin
-- [ ] T070 Add navigation entries and limited-account recovery paths in src/components/app/AppFrame.tsx and src/components/app/BottomNavigation.tsx
-- [ ] T071 Run npm run test:unit with coverage and add focused tests until changed line and function coverage reach 80% in affected modules
-- [ ] T072 Run npm run typecheck, npm run lint, and npm run build and resolve all failures without weakening tests
+- [x] T069 [P] Add keyboard, focus, label, live-status, error-association, and contrast improvements across src/components/auth, src/components/support, and src/components/admin
+- [x] T070 Add navigation entries and limited-account recovery paths in src/components/app/AppFrame.tsx and src/components/app/BottomNavigation.tsx
+- [x] T071 Run npm run test:unit with coverage and add focused tests until changed line and function coverage reach 80% in affected modules
+- [x] T072 Run npm run typecheck, npm run lint, and npm run build and resolve all failures without weakening tests
 - [ ] T073 Execute configured direct-browser scenarios from specs/002-commercial-readiness/quickstart.md and record browser/version evidence in specs/002-commercial-readiness/validation.md
-- [ ] T074 Execute or explicitly mark unverified the live Google, Kakao, Naver, guardian, invitation and schedule concurrency, backup restore, and alert-delivery scenarios in specs/002-commercial-readiness/validation.md
-- [ ] T075 Reconcile every FR-001 through FR-062 and SC-001 through SC-012 against completed tasks and evidence in specs/002-commercial-readiness/validation.md
+- [x] T074 Execute or explicitly mark unverified the live Google, Kakao, Naver, guardian, invitation and schedule concurrency, backup restore, and alert-delivery scenarios in specs/002-commercial-readiness/validation.md
+- [x] T075 Reconcile every FR-001 through FR-062 and SC-001 through SC-012 against completed tasks and evidence in specs/002-commercial-readiness/validation.md
 
 ---
 
