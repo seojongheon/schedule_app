@@ -3,6 +3,7 @@ import type { CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/data/database.types';
 import { evaluateMiddlewareAccess } from '@/lib/auth/middleware-access';
+import { getVerifiedIdentity } from '@/lib/auth/verified-identity';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 
 type CookieToSet = {
@@ -34,9 +35,9 @@ export async function middleware(request: NextRequest) {
     profile: null,
   });
   const protectedPath = initialDecision.action !== 'allow';
+  if (!protectedPath) return response;
   if (!supabaseUrl || !supabaseKey) {
-    if (protectedPath) return NextResponse.redirect(new URL('/login', request.url));
-    return response;
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
@@ -56,9 +57,8 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!protectedPath) return response;
-  if (!user) {
+  const identity = await getVerifiedIdentity(supabase);
+  if (!identity) {
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return withSessionCookies(response, NextResponse.json({ error: { code: 'authentication_required', message: '인증이 필요합니다.' } }, { status: 401 }));
     }
@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
 
   const { data } = await supabase.from('profiles')
     .select('account_state, session_started_at, last_seen_at')
-    .eq('id', user.id)
+    .eq('id', identity.id)
     .single();
   const profile = data as unknown as {
     account_state: string;
@@ -96,7 +96,7 @@ export async function middleware(request: NextRequest) {
     return withSessionCookies(response, NextResponse.json({ error: { code: 'authentication_required', message: '인증이 필요합니다.' } }, { status: 401 }));
   }
   if (profile?.last_seen_at && Date.now() - new Date(profile.last_seen_at).getTime() >= 5 * 60 * 1000) {
-    await createSupabaseAdminClient().rpc('touch_session_activity', { p_actor_user_id: user.id });
+    await createSupabaseAdminClient().rpc('touch_session_activity', { p_actor_user_id: identity.id });
   }
 
   return response;

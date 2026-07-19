@@ -1,6 +1,5 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
 import type { PreliminaryTask, RoomMember, Schedule, UserPreference } from '@/domain/entities';
 import { hasRecentAuthentication } from '@/domain/auth/account-policy';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -19,14 +18,6 @@ function messageFromError(error: unknown) {
 
 function logActionError(action: string, error: unknown) {
   console.error(`[schedule-action:${action}]`, error);
-}
-
-function revalidateApp() {
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/today');
-  revalidatePath('/dashboard/preliminary');
-  revalidatePath('/rooms');
-  revalidatePath('/mypage');
 }
 
 function supabaseArgs<T extends Record<string, unknown>>(value: T) {
@@ -69,9 +60,6 @@ export async function createRoomAction(values: {
     if (!result?.room_id) {
       throw new Error('방 생성 결과를 확인하지 못했습니다.');
     }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${result.room_id}`);
 
     return { ok: true, data: { roomId: result.room_id } };
   } catch (error) {
@@ -157,9 +145,6 @@ export async function saveScheduleAction(values: {
       }
     }
 
-    revalidateApp();
-    revalidatePath(`/rooms/${values.roomId}`);
-
     return { ok: true, data: { scheduleId } };
   } catch (error) {
     logActionError('saveScheduleAction', error);
@@ -175,9 +160,6 @@ export async function deleteScheduleAction(schedule: Pick<Schedule, 'id' | 'room
     if (error) {
       throw error;
     }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${schedule.roomId}`);
 
     return { ok: true };
   } catch (error) {
@@ -213,8 +195,6 @@ export async function updateScheduleCheckedAction(values: {
       throw error;
     }
 
-    revalidateApp();
-
     return { ok: true };
   } catch (error) {
     logActionError('updateScheduleCheckedAction', error);
@@ -236,9 +216,6 @@ export async function updateScheduleStatusAction(schedule: Pick<Schedule, 'id' |
       throw error;
     }
 
-    revalidateApp();
-    revalidatePath(`/rooms/${schedule.roomId}`);
-
     return { ok: true };
   } catch (error) {
     logActionError('updateScheduleStatusAction', error);
@@ -256,9 +233,6 @@ export async function deleteRoomAction(roomId: string): Promise<ActionResult> {
     if (error) {
       throw error;
     }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${roomId}`);
 
     return { ok: true };
   } catch (error) {
@@ -294,8 +268,6 @@ export async function createPreliminaryTaskAction(values: {
       throw error;
     }
 
-    revalidateApp();
-
     return { ok: true, data: { taskId: String((data as { id: string }).id) } };
   } catch (error) {
     logActionError('createPreliminaryTaskAction', error);
@@ -311,8 +283,6 @@ export async function deletePreliminaryTaskAction(taskId: string): Promise<Actio
     if (error) {
       throw error;
     }
-
-    revalidateApp();
 
     return { ok: true };
   } catch (error) {
@@ -346,8 +316,6 @@ export async function updatePreliminaryTaskAction(values: {
       throw error;
     }
 
-    revalidateApp();
-
     return { ok: true };
   } catch (error) {
     logActionError('updatePreliminaryTaskAction', error);
@@ -369,8 +337,6 @@ export async function updatePreliminaryTaskCompletedAction(values: {
     if (error) {
       throw error;
     }
-
-    revalidateApp();
 
     return { ok: true };
   } catch (error) {
@@ -396,9 +362,6 @@ export async function updateMemberRoleAction(values: {
       throw error;
     }
 
-    revalidateApp();
-    revalidatePath(`/rooms/${values.roomId}`);
-
     return { ok: true };
   } catch (error) {
     logActionError('updateMemberRoleAction', error);
@@ -417,9 +380,6 @@ export async function kickMemberAction(values: {
     if (error) {
       throw error;
     }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${values.roomId}`);
 
     return { ok: true };
   } catch (error) {
@@ -442,9 +402,6 @@ export async function transferOwnershipAction(values: {
     if (error) {
       throw error;
     }
-
-    revalidateApp();
-    revalidatePath(`/rooms/${values.roomId}`);
 
     return { ok: true };
   } catch (error) {
@@ -475,8 +432,6 @@ export async function updateProfileAction(values: {
     if (error) {
       throw error;
     }
-
-    revalidateApp();
 
     return { ok: true };
   } catch (error) {
@@ -558,8 +513,6 @@ export async function updateUserPreferencesAction(values: {
     if (error) {
       throw error;
     }
-
-    revalidatePath('/mypage');
 
     return { ok: true };
   } catch (error) {

@@ -11,6 +11,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const [{ roomId }, profile] = await Promise.all([params, getCurrentProfile()]);
-  const initialData = await getScheduleWorkspaceData(profile);
+  const initialData = await getScheduleWorkspaceData(profile, { page: 'room', roomId });
   return <ScheduleWorkspace page="room" roomId={roomId} profile={profile} initialData={initialData} />;
 }
