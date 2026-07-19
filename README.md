@@ -68,4 +68,4 @@ npm run predeploy:check
 
 위 명령은 타입 검사, 린트, 프로덕션 빌드를 순서대로 실행합니다.
 
-자세한 Git, Vercel, Supabase 배포 절차는 [DEPLOYMENT.md](./DEPLOYMENT.md)를 확인하세요.
+자세한 저장소 운영, Vercel, Supabase 배포 및 검증 절차는 [PROJECT_PLAYBOOK.md](./PROJECT_PLAYBOOK.md)를 확인하세요.

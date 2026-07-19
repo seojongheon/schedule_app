@@ -1,6 +1,6 @@
-# 공유 스케줄 배포 튜토리얼
+# 공유 스케줄 프로젝트 플레이북
 
-이 문서는 GitHub에 코드를 올리고 Vercel로 배포하기 전에 따라갈 순서입니다. 현재 단계에서는 직접 Git push나 Vercel 배포를 실행하지 않습니다.
+이 문서는 저장소 운영, 배포, 데이터베이스 적용, 보안 점검, 장애 대응에 필요한 공통 기준과 실행 순서를 관리하는 단일 플레이북입니다. compound 기록도 이 문서에서만 관리합니다.
 
 ## 1. 로컬 최종 점검
 
@@ -143,6 +143,11 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 NEXT_PUBLIC_SITE_URL=https://YOUR_PROJECT.vercel.app
+PRIVATE_DATA_ACTIVE_KEY_VERSION=1
+PRIVATE_DATA_KEY_V1=
+SECURITY_HMAC_KEY=
+DELETION_HMAC_KEY=
+TRUSTED_PROXY_MODE=vercel
 ```
 
 필요할 때만 추가:
@@ -198,3 +203,18 @@ INITIAL_ADMIN_ID=your-admin-id INITIAL_ADMIN_PASSWORD='StrongPassword123!' INITI
 - Supabase RLS가 활성화되어 있는지 확인
 - 관리자 API 접근이 서비스 관리자에게만 허용되는지 확인
 - 불필요한 테스트 계정과 테스트 데이터 삭제
+
+## 13. Compound 기록 관리
+
+프로젝트에서 발견한 운영 지식, 장애 원인, 확정된 방향, 검증 결과는 이 문서에만 추가합니다. 별도의 compound 문서나 기능별 복사본을 만들지 않습니다.
+
+각 기록은 다음 순서를 유지합니다.
+
+1. 날짜와 대상 범위
+2. 증상과 영향
+3. 확인한 근거
+4. 확정한 원인과 결정
+5. 적용한 변경 또는 운영 조치
+6. 검증 결과와 남은 후속 작업
+
+문서 본문은 중립적인 기술 문체로 작성하고, 비밀번호·토큰·암호화 키·개인정보·원문 IP는 기록하지 않습니다.
