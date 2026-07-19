@@ -43,6 +43,7 @@ import {
   updateUserPreferencesAction,
 } from '@/app/actions/schedule-actions';
 import type { ScheduleWorkspaceInitialData } from '@/data/schedule-supabase';
+import type { ScheduleWorkspacePage } from '@/data/schedule-workspace-query';
 import type { PreliminaryTask, Profile, RoomMember, Schedule, SchedulingRoom, UserPreference } from '@/domain/entities';
 import { AppFrame } from '@/components/app/AppFrame';
 import { AppHeader } from '@/components/app/AppHeader';
@@ -68,7 +69,6 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { recognizeImageText } from '@/components/app/image-ocr';
 import { parseScheduleText } from '@/components/app/schedule-text-parser';
 
-type WorkspacePage = 'dashboard' | 'todayTasks' | 'preliminaryTasks' | 'rooms' | 'room' | 'mypage';
 type SheetType =
   | 'createRoom'
   | 'createComplete'
@@ -85,7 +85,7 @@ type SheetType =
   | null;
 
 interface ScheduleWorkspaceProps {
-  page: WorkspacePage;
+  page: ScheduleWorkspacePage;
   roomId?: string;
   profile?: Profile;
   initialData?: ScheduleWorkspaceInitialData;
@@ -467,7 +467,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setRooms((previous) => [newRoom, ...previous]);
     setCreatedRoom(newRoom);
     setActiveSheet('createComplete');
-    router.refresh();
   };
 
   const addDemoSchedule = async (values: ScheduleFormValues) => {
@@ -536,7 +535,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setSelectedSchedule(null);
     setSelectedTask(null);
     setActiveSheet(null);
-    router.refresh();
   };
 
   const joinDemoRoom = async (values: JoinRoomFormValues) => {
@@ -560,7 +558,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       }
       setActiveSheet(null);
       router.push(`/rooms/${result.roomId}`);
-      router.refresh();
       return { ok: true, message: '' };
     } catch {
       return { ok: false, message: '초대 참여를 처리하지 못했습니다. 다시 시도해주세요.' };
@@ -615,7 +612,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     );
     setSelectedTask(null);
     setActiveSheet(null);
-    router.refresh();
   };
 
   const deleteSelectedSchedule = async () => {
@@ -634,7 +630,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setSelectedSchedule(null);
     setDeleteScheduleOpen(false);
     setActiveSheet(null);
-    router.refresh();
   };
 
   const deleteTask = async (taskId: string) => {
@@ -648,7 +643,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     }
 
     setTasks((previous) => previous.filter((task) => task.id !== taskId));
-    router.refresh();
   };
 
   const editTask = (task: PreliminaryTask) => {
@@ -670,7 +664,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       }
     }
 
-    router.refresh();
   };
 
   const toggleScheduleChecked = async (scheduleId: string, isChecked: boolean) => {
@@ -689,7 +682,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       }
     }
 
-    router.refresh();
   };
 
   const deleteSchedule = async (scheduleId: string) => {
@@ -709,7 +701,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     }
 
     setSchedules((previous) => previous.filter((candidate) => candidate.id !== scheduleId));
-    router.refresh();
   };
 
   const deleteRoom = async (targetRoomId: string) => {
@@ -728,7 +719,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setDeleteRoomOpen(false);
     setActiveSheet(null);
     router.push('/dashboard');
-    router.refresh();
   };
 
   const updateScheduleStatus = async (scheduleId: string, status: Schedule['status']) => {
@@ -752,7 +742,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
         candidate.id === scheduleId ? { ...candidate, status, updatedAt: new Date().toISOString() } : candidate,
       ),
     );
-    router.refresh();
   };
 
   const changeMemberRole = async (targetRoomId: string, memberId: string, role: RoomMember['role']) => {
@@ -776,7 +765,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
           : room,
       ),
     );
-    router.refresh();
   };
 
   const kickMember = async (targetRoomId: string, memberId: string) => {
@@ -803,7 +791,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
           : schedule,
       ),
     );
-    router.refresh();
   };
 
   const transferOwnership = async (targetRoomId: string, targetMemberId: string) => {
@@ -848,7 +835,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     );
     setTransferConfirmed(false);
     setActiveSheet(null);
-    router.refresh();
   };
 
   const saveProfile = async (values: ProfileFormValues) => {
@@ -869,7 +855,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       name: values.name.trim() || previous.name,
       phone: values.phone.trim() || null,
     }));
-    router.refresh();
   };
 
   const savePassword = async (values: PasswordFormValues) => {
@@ -913,7 +898,6 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     }
 
     setPreference(nextPreference);
-    router.refresh();
     return { ok: true, message: '화면 설정을 저장했습니다.' };
   };
 

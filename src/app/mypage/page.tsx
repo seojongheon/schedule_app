@@ -11,6 +11,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function MyPage() {
   const profile = await getCurrentProfile();
-  const initialData = await getScheduleWorkspaceData(profile);
+  const initialData = await getScheduleWorkspaceData(profile, { page: 'mypage' });
   return <ScheduleWorkspace page="mypage" profile={profile} initialData={initialData} />;
 }

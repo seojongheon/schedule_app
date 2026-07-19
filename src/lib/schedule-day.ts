@@ -1,3 +1,25 @@
+const koreanDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function getKoreanDayBounds(referenceDate: Date = new Date()) {
+  const parts = koreanDateFormatter.formatToParts(referenceDate);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const year = values.year;
+  const month = values.month;
+  const day = values.day;
+  const dayStart = new Date(`${year}-${month}-${day}T00:00:00+09:00`);
+  const nextDayStart = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+  return {
+    startAt: dayStart.toISOString(),
+    endAt: nextDayStart.toISOString(),
+  };
+}
+
 export function isScheduleOverlappingDay(
   startAt: string,
   endAt: string,

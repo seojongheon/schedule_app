@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { countSchedulesOverlappingDay, isScheduleOverlappingDay } from './schedule-day.ts';
+import { countSchedulesOverlappingDay, getKoreanDayBounds, isScheduleOverlappingDay } from './schedule-day.ts';
 
 const today = new Date(2026, 6, 18, 12, 0, 0);
 
@@ -23,4 +23,13 @@ test('counts only schedules that overlap today', () => {
   ];
 
   assert.equal(countSchedulesOverlappingDay(schedules, today), 2);
+});
+
+test('uses Korea Standard Time boundaries independently from the server timezone', () => {
+  const bounds = getKoreanDayBounds(new Date('2026-07-18T20:00:00.000Z'));
+
+  assert.deepEqual(bounds, {
+    startAt: '2026-07-18T15:00:00.000Z',
+    endAt: '2026-07-19T15:00:00.000Z',
+  });
 });

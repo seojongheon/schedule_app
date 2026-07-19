@@ -152,7 +152,7 @@ test("middleware can update activity only through a service-scoped actor RPC", a
   const source = await readFile(new URL("../../middleware.ts", import.meta.url), "utf8");
   assert.match(source, /createSupabaseAdminClient/);
   assert.match(source, /touch_session_activity/);
-  assert.match(source, /p_actor_user_id:\s*user\.id/);
+  assert.match(source, /p_actor_user_id:\s*(?:identity|user)\.id/);
   assert.doesNotMatch(source, /touch_current_session_activity/);
 });
 
