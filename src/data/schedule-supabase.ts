@@ -12,7 +12,7 @@ export interface ScheduleWorkspaceInitialData {
 
 const ROOM_COLUMNS = 'id,name,description,color,shared_schedule_color,owner_user_id,status,default_view,business_start_time,business_end_time,updated_at';
 const MEMBER_COLUMNS = 'id,room_id,user_id,nickname,role,color,joined_at,last_active_at';
-const SCHEDULE_COLUMNS = 'id,room_id,title,start_at,end_at,address,customer_phone,estimated_price,additional_info,status,owner_member_id,owner_name_snapshot,created_by_member_id,created_by_name_snapshot,updated_at';
+const SCHEDULE_COLUMNS = 'id,room_id,title,start_at,end_at,address,customer_phone,estimated_price,additional_info,status,owner_member_id,owner_name_snapshot,created_by_member_id,created_by_name_snapshot,created_at,updated_at';
 const PARTICIPANT_COLUMNS = 'schedule_id,room_member_id';
 const STATE_COLUMNS = 'schedule_id,user_id,is_checked';
 const TASK_COLUMNS = 'id,user_id,room_id,title,memo,priority,due_date,is_completed';
@@ -26,7 +26,7 @@ type MemberRow = { id: string; room_id: string; user_id: string; nickname: strin
 type ScheduleRow = {
   id: string; room_id: string; title: string; start_at: string; end_at: string; address: string | null; customer_phone: string | null;
   estimated_price: number | null; additional_info: string | null; status: Schedule['status']; owner_member_id: string; owner_name_snapshot: string;
-  created_by_member_id: string | null; created_by_name_snapshot: string; updated_at: string;
+  created_by_member_id: string | null; created_by_name_snapshot: string; created_at: string; updated_at: string;
 };
 type ScheduleParticipantRow = { schedule_id: string; room_member_id: string };
 type ScheduleStateRow = { schedule_id: string; user_id: string; is_checked: boolean };
@@ -119,7 +119,8 @@ export async function getScheduleWorkspaceData(
       id: schedule.id, roomId: schedule.room_id, title: schedule.title, startAt: schedule.start_at, endAt: schedule.end_at,
       address: schedule.address, customerPhone: schedule.customer_phone, estimatedPrice: schedule.estimated_price, additionalInfo: schedule.additional_info,
       status: schedule.status, ownerMemberId: schedule.owner_member_id, ownerName: schedule.owner_name_snapshot,
-      createdByMemberId: schedule.created_by_member_id, createdByName: schedule.created_by_name_snapshot, updatedAt: schedule.updated_at,
+      createdByMemberId: schedule.created_by_member_id, createdByName: schedule.created_by_name_snapshot,
+      createdAt: schedule.created_at, updatedAt: schedule.updated_at,
       participantMemberIds: participantsByScheduleId.get(schedule.id) ?? [], isChecked: checkedByScheduleId.get(schedule.id) ?? false,
     }));
     const rooms = roomRows.map<SchedulingRoom>((room) => {
