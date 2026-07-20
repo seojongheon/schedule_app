@@ -58,6 +58,7 @@ export interface Schedule {
   ownerName: string;
   createdByMemberId: string | null;
   createdByName: string;
+  createdAt: string;
   updatedAt: string;
   participantMemberIds: string[];
   isChecked?: boolean;

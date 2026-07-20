@@ -520,6 +520,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       ownerName,
       createdByMemberId: selectedSchedule?.createdByMemberId ?? member.id,
       createdByName: selectedSchedule?.createdByName ?? member.nickname,
+      createdAt: selectedSchedule?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       participantMemberIds,
       isChecked: false,

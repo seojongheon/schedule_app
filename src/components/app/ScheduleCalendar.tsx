@@ -7,7 +7,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Profile, Schedule, SchedulingRoom } from '@/domain/entities';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Sheet } from '@/components/ui/sheet';
 import { ParticipantFilterChip } from '@/components/app/ParticipantFilterChip';
+import { buildScheduleOverlapLayout } from '@/lib/schedule-overlap-layout';
 import { cn } from '@/lib/utils';
 
 function minutesFromDayStart(dateValue: string) {
@@ -55,6 +57,7 @@ export function ScheduleCalendar({
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedOverflowId, setSelectedOverflowId] = useState<string | null>(null);
   const [currentMinutes, setCurrentMinutes] = useState(getCurrentMinutes);
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const weekDragStart = useRef({ x: 0, y: 0 });
@@ -241,7 +244,36 @@ export function ScheduleCalendar({
         .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [schedules, selectedDateKey],
   );
+  const schedulesById = useMemo(
+    () => new Map(selectedDaySchedules.map((schedule) => [schedule.id, schedule])),
+    [selectedDaySchedules],
+  );
+  const overlapLayout = useMemo(
+    () => buildScheduleOverlapLayout(selectedDaySchedules.map((schedule) => {
+      const startMinute = Math.max(minutesFromDayStart(schedule.startAt), dayStart);
+      const endMinute = dateKey(schedule.endAt) === selectedDateKey
+        ? minutesFromDayStart(schedule.endAt)
+        : dayEnd;
+
+      return {
+        id: schedule.id,
+        startMinute,
+        endMinute: Math.min(endMinute, dayEnd),
+        createdAt: schedule.createdAt,
+      };
+    })),
+    [dayEnd, dayStart, selectedDateKey, selectedDaySchedules],
+  );
+  const selectedOverflowSegment = overlapLayout.overflowSegments.find((segment) => segment.id === selectedOverflowId);
+  const selectedOverflowSchedules = selectedOverflowSegment?.scheduleIds.map((scheduleId) => schedulesById.get(scheduleId))
+    .filter((schedule): schedule is Schedule => Boolean(schedule)) ?? [];
   const selectedDate = new Date(`${selectedDateKey}T09:00:00+09:00`);
+
+  useEffect(() => {
+    if (selectedOverflowId && !selectedOverflowSegment) {
+      setSelectedOverflowId(null);
+    }
+  }, [selectedOverflowId, selectedOverflowSegment]);
 
   useEffect(() => {
     if (!timeTableRef.current) {
@@ -323,7 +355,8 @@ export function ScheduleCalendar({
   });
 
   return (
-    <div className="space-y-4">
+    <>
+      <div className="space-y-4">
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -498,105 +531,184 @@ export function ScheduleCalendar({
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-        <div className="border-b border-app-border px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-black text-gray-950">
-                {format(selectedDate, 'M월 d일')} {weekdayLabels[selectedDate.getDay()]}
-              </h3>
-              <p className="text-xs text-gray-500">일정 {selectedDaySchedules.length}개</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {timeTableAction}
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-app-blue">30분</span>
+          <div className="border-b border-app-border px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-gray-950">
+                  {format(selectedDate, 'M월 d일')} {weekdayLabels[selectedDate.getDay()]}
+                </h3>
+                <p className="text-xs text-gray-500">일정 {selectedDaySchedules.length}개</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {timeTableAction}
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-app-blue">30분</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div ref={timeTableRef} className={cn('relative overflow-y-auto bg-white', compact ? 'h-[420px]' : 'h-[1344px]')}>
-          {hourRows.map((minutes) => (
-            <div
-              key={minutes}
-              className="absolute left-0 right-0 border-t border-gray-100"
-              style={{ top: `${((minutes - dayStart) / totalMinutes) * 100}%` }}
-            >
-              <span className="absolute left-3 top-1 text-[10px] font-semibold text-gray-400">
-                {minutes === dayEnd ? '24:00' : `${String(Math.floor(minutes / 60)).padStart(2, '0')}:00`}
-              </span>
+          <div ref={timeTableRef} className={cn('overflow-y-auto bg-white', compact ? 'h-[420px]' : 'h-[1344px]')}>
+            <div className="relative h-[1344px]">
+              {hourRows.map((minutes) => (
+                <div
+                  key={minutes}
+                  className="absolute left-0 right-0 border-t border-gray-100"
+                  style={{ top: `${((minutes - dayStart) / totalMinutes) * 100}%` }}
+                >
+                  <span className="absolute left-3 top-1 text-[10px] font-semibold text-gray-400">
+                    {minutes === dayEnd ? '24:00' : `${String(Math.floor(minutes / 60)).padStart(2, '0')}:00`}
+                  </span>
+                </div>
+              ))}
+              {weekDateKeys.has(todayKey) && selectedDateKey === todayKey && isCurrentTimeVisible ? (
+                <div
+                  className="absolute left-12 right-3 z-20 border-t border-red-500"
+                  style={{ top: `${currentTimeTop}%` }}
+                >
+                  <span className="absolute -left-10 -top-2 text-[10px] font-bold text-red-500">
+                    {String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:{String(currentMinutes % 60).padStart(2, '0')}
+                  </span>
+                </div>
+              ) : null}
+              <div className="absolute inset-y-0 left-16 right-3">
+                {overlapLayout.scheduleSegments.map((segment) => {
+                  const schedule = schedulesById.get(segment.scheduleId);
+
+                  if (!schedule) {
+                    return null;
+                  }
+
+                  const durationMinutes = segment.endMinute - segment.startMinute;
+                  const isCompactSegment = durationMinutes <= 60 || segment.columnCount >= 3;
+                  const scheduleStartMinute = minutesFromDayStart(schedule.startAt);
+                  const scheduleEndMinute = dateKey(schedule.endAt) === selectedDateKey
+                    ? minutesFromDayStart(schedule.endAt)
+                    : dayEnd;
+                  const continuesFromPreviousBand = segment.startMinute > scheduleStartMinute;
+                  const continuesIntoNextBand = segment.endMinute < scheduleEndMinute;
+                  const participants = room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
+                  const isShared = participants.length > 1;
+                  const primaryColor = isShared ? room.sharedScheduleColor : participants[0]?.color ?? room.color;
+                  const highlighted = isHighlighted(schedule);
+
+                  return (
+                    <button
+                      key={`${schedule.id}-${segment.startMinute}-${segment.endMinute}-${segment.columnIndex}`}
+                      type="button"
+                      aria-label={`${schedule.title}, ${format(new Date(schedule.startAt), 'HH:mm')}부터 ${format(new Date(schedule.endAt), 'HH:mm')}까지`}
+                      className={cn(
+                        'absolute overflow-hidden rounded-lg border bg-white text-left shadow-sm transition',
+                        isCompactSegment ? 'px-2 py-1' : 'p-3',
+                        continuesFromPreviousBand && 'rounded-t-none border-t-0',
+                        continuesIntoNextBand && 'rounded-b-none border-b-0',
+                        !highlighted && 'opacity-25',
+                      )}
+                      style={{
+                        left: `calc(${(segment.columnIndex / segment.columnCount) * 100}% + 2px)`,
+                        width: `calc(${100 / segment.columnCount}% - 4px)`,
+                        top: `${((segment.startMinute - dayStart) / totalMinutes) * 100}%`,
+                        height: `${(durationMinutes / totalMinutes) * 100}%`,
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}16`,
+                      }}
+                      onClick={() => onScheduleClick(schedule)}
+                    >
+                      {isCompactSegment ? (
+                        <div className="flex h-full min-w-0 items-center gap-1">
+                          {isShared ? <Users className="h-3 w-3 shrink-0" style={{ color: primaryColor }} /> : null}
+                          <p className="min-w-0 flex-1 truncate text-[10px] font-black text-gray-950">{schedule.title}</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            {isShared ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: primaryColor }} /> : null}
+                            <p className="min-w-0 truncate text-xs font-black text-gray-950">{schedule.title}</p>
+                          </div>
+                          <p className="mt-1 truncate text-[11px] font-bold" style={{ color: primaryColor }}>
+                            {format(new Date(schedule.startAt), 'HH:mm')} - {format(new Date(schedule.endAt), 'HH:mm')}
+                          </p>
+                          <p className="mt-1 truncate text-[11px] text-gray-500">
+                            {participants.map((member) => member.nickname).join(' · ')}
+                          </p>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+                {overlapLayout.overflowSegments.map((segment) => {
+                  const hiddenSchedules = segment.hiddenScheduleIds
+                    .map((scheduleId) => schedulesById.get(scheduleId))
+                    .filter((schedule): schedule is Schedule => Boolean(schedule));
+                  const highlighted = hiddenSchedules.some((schedule) => isHighlighted(schedule));
+                  const selectedMemberColor = room.members.find((member) => member.id === selectedFilter)?.color;
+                  const primaryColor = selectedMemberColor ?? room.sharedScheduleColor;
+
+                  return (
+                    <button
+                      key={segment.id}
+                      type="button"
+                      aria-label={`${hiddenSchedules.length}개 일정 더보기`}
+                      className={cn(
+                        'absolute overflow-hidden rounded-lg border bg-white px-1 py-1 text-center shadow-sm transition',
+                        !highlighted && 'opacity-25',
+                        highlighted && selectedFilter !== 'all' && 'ring-2 ring-offset-1',
+                      )}
+                      style={{
+                        left: `calc(${(segment.columnIndex / segment.columnCount) * 100}% + 2px)`,
+                        width: `calc(${100 / segment.columnCount}% - 4px)`,
+                        top: `${((segment.startMinute - dayStart) / totalMinutes) * 100}%`,
+                        height: `${((segment.endMinute - segment.startMinute) / totalMinutes) * 100}%`,
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}20`,
+                        color: primaryColor,
+                      }}
+                      onClick={() => setSelectedOverflowId(segment.id)}
+                    >
+                      <span className="flex h-full items-center justify-center truncate text-[9px] font-black">
+                        +{hiddenSchedules.length} 더보기
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-          {weekDateKeys.has(todayKey) && selectedDateKey === todayKey && isCurrentTimeVisible ? (
-            <div
-              className="absolute left-12 right-3 z-10 border-t border-red-500"
-              style={{ top: `${currentTimeTop}%` }}
-            >
-              <span className="absolute -left-10 -top-2 text-[10px] font-bold text-red-500">
-                {String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:{String(currentMinutes % 60).padStart(2, '0')}
-              </span>
-            </div>
-          ) : null}
-          {selectedDaySchedules.map((schedule, index) => {
-            const start = minutesFromDayStart(schedule.startAt);
-            const end = minutesFromDayStart(schedule.endAt);
-            const boundedStart = Math.max(start, dayStart);
-            const boundedEnd = Math.min(Math.max(end, boundedStart + 30), dayEnd);
-            const top = ((boundedStart - dayStart) / totalMinutes) * 100;
-            const height = Math.max(((boundedEnd - boundedStart) / totalMinutes) * 100, 2.5);
-            const isShortBlock = boundedEnd - boundedStart <= 60;
-            const participants = room.members.filter((member) => schedule.participantMemberIds.includes(member.id));
-            const isShared = participants.length > 1;
-            const primaryColor = isShared ? room.sharedScheduleColor : participants[0]?.color ?? room.color;
-            const highlighted = isHighlighted(schedule);
+          </div>
+        </Card>
+      )}
+      </div>
+      <Sheet
+        open={Boolean(selectedOverflowSegment)}
+        title="겹친 일정 전체 보기"
+        description={selectedOverflowSegment
+          ? `${format(selectedDate, 'M월 d일')} · ${selectedOverflowSchedules.length}개 일정`
+          : undefined}
+        onClose={() => setSelectedOverflowId(null)}
+      >
+        <div className="space-y-3">
+          {selectedOverflowSchedules.map((schedule) => {
+            const participantNames = room.members
+              .filter((member) => schedule.participantMemberIds.includes(member.id))
+              .map((member) => member.nickname)
+              .join(', ');
 
             return (
               <button
                 key={schedule.id}
                 type="button"
-                className={cn(
-                  'absolute left-16 min-w-[142px] overflow-hidden rounded-xl border bg-white text-left shadow-sm transition',
-                  isShortBlock ? 'px-2 py-1.5' : 'p-3',
-                  !highlighted && 'opacity-25',
-                )}
-                style={{
-                  top: `${top}%`,
-                  height: `${height}%`,
-                  minHeight: isShortBlock ? '34px' : '52px',
-                  right: index % 2 === 0 ? '48%' : '12px',
-                  borderColor: primaryColor,
-                  backgroundColor: `${primaryColor}16`,
+                className="w-full rounded-2xl border border-app-border bg-white p-4 text-left transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-blue"
+                onClick={() => {
+                  setSelectedOverflowId(null);
+                  onScheduleClick(schedule);
                 }}
-                onClick={() => onScheduleClick(schedule)}
               >
-                {isShortBlock ? (
-                  <div className="flex h-full min-w-0 items-center gap-1.5">
-                    {isShared ? <Users className="h-3 w-3 shrink-0" style={{ color: primaryColor }} /> : null}
-                    <p className="min-w-0 flex-1 truncate text-[11px] font-black text-gray-950">{schedule.title}</p>
-                    <span className="shrink-0 text-[10px] font-bold" style={{ color: primaryColor }}>
-                      {format(new Date(schedule.startAt), 'HH:mm')}
-                    </span>
-                    <span className="min-w-0 shrink truncate text-[10px] text-gray-500">
-                      {participants.map((member) => member.nickname).join(' · ')}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-1.5">
-                      {isShared ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: primaryColor }} /> : null}
-                      <p className="min-w-0 truncate text-xs font-black text-gray-950">{schedule.title}</p>
-                    </div>
-                    <p className="mt-1 truncate text-[11px] font-bold" style={{ color: primaryColor }}>
-                      {format(new Date(schedule.startAt), 'HH:mm')} - {format(new Date(schedule.endAt), 'HH:mm')}
-                    </p>
-                    <p className="mt-1 truncate text-[11px] text-gray-500">
-                      {participants.map((member) => member.nickname).join(' · ')}
-                    </p>
-                  </>
-                )}
+                <p className="font-black text-gray-950">{schedule.title}</p>
+                <p className="mt-1 text-xs font-bold text-app-blue">
+                  {format(new Date(schedule.startAt), 'HH:mm')} - {format(new Date(schedule.endAt), 'HH:mm')}
+                </p>
+                <p className="mt-2 text-xs text-gray-500">참여자: {participantNames || '-'}</p>
               </button>
             );
           })}
         </div>
-        </Card>
-      )}
-    </div>
+      </Sheet>
+    </>
   );
 }

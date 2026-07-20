@@ -80,3 +80,16 @@ test('workspace applies role-aware ownership controls and preserves kicked owner
   assert.match(workspace, /ownerMemberId:\s*roomOwner\.id/);
   assert.doesNotMatch(workspace, /function roleCanManageSchedules/);
 });
+
+test('schedule read models preserve the actual creation timestamp', async () => {
+  const [loader, entities, workspace] = await Promise.all([
+    readFile(loaderUrl, 'utf8'),
+    readFile(entitiesUrl, 'utf8'),
+    readFile(workspaceUrl, 'utf8'),
+  ]);
+
+  assert.match(loader, /created_at/);
+  assert.match(loader, /createdAt:\s*schedule\.created_at/);
+  assert.match(entities, /createdAt:\s*string/);
+  assert.match(workspace, /createdAt:\s*selectedSchedule\?\.createdAt\s*\?\?\s*new Date\(\)\.toISOString\(\)/);
+});
