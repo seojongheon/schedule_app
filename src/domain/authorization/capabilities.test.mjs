@@ -26,7 +26,6 @@ const roomMatrix = {
     "schedule.edit_own",
     "schedule.edit_any",
     "invite.create",
-    "member.manage",
   ],
   member: ["room.read", "schedule.create", "schedule.edit_own"],
   viewer: ["room.read"],
@@ -42,6 +41,7 @@ test("room roles resolve the exact approved capability matrix", () => {
 test("room capability checks deny elevation and mutations outside the role", () => {
   assert.equal(hasRoomCapability("manager", "manager.manage"), false);
   assert.equal(hasRoomCapability("manager", "ownership.transfer"), false);
+  assert.equal(hasRoomCapability("manager", "member.manage"), false);
   assert.equal(hasRoomCapability("member", "invite.create"), false);
   assert.equal(hasRoomCapability("viewer", "schedule.create"), false);
   assert.equal(hasRoomCapability("owner", "room.delete"), true);

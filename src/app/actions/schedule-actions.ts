@@ -71,6 +71,7 @@ export async function createRoomAction(values: {
 export async function saveScheduleAction(values: {
   scheduleId?: string;
   roomId: string;
+  ownerMemberId: string;
   title: string;
   participantMemberIds: string[];
   date: string;
@@ -83,67 +84,24 @@ export async function saveScheduleAction(values: {
 }): Promise<ActionResult<{ scheduleId: string }>> {
   try {
     const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw new Error('로그인이 필요합니다.');
-    }
-
-    const { data: memberData, error: memberError } = await supabase
-      .from('room_members')
-      .select('id')
-      .eq('room_id', values.roomId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (memberError) {
-      throw memberError;
-    }
-
     const estimatedPrice = values.estimatedPrice.trim() ? Number(values.estimatedPrice) : null;
-    const payload = {
-      room_id: values.roomId,
-      title: values.title,
-      start_at: `${values.date}T${values.startTime}:00+09:00`,
-      end_at: `${values.date}T${values.endTime}:00+09:00`,
-      address: values.address.trim() || null,
-      customer_phone: values.customerPhone.trim() || null,
-      estimated_price: estimatedPrice,
-      additional_info: values.additionalInfo.trim() || null,
-      created_by_member_id: String((memberData as { id: string }).id),
-    };
-
-    const scheduleResult = values.scheduleId
-      ? await supabase.from('schedules').update(supabasePayload(payload)).eq('id', values.scheduleId).select('id').single()
-      : await supabase.from('schedules').insert(supabasePayload(payload)).select('id').single();
-
-    if (scheduleResult.error) {
-      throw scheduleResult.error;
-    }
-
-    const scheduleId = String((scheduleResult.data as { id: string }).id);
-    const participantRows = [...new Set(values.participantMemberIds)].map((roomMemberId) => ({
-      schedule_id: scheduleId,
-      room_member_id: roomMemberId,
+    const { data, error } = await supabase.rpc('save_room_schedule', supabaseArgs({
+      p_schedule_id: values.scheduleId ?? null,
+      p_room_id: values.roomId,
+      p_owner_member_id: values.ownerMemberId,
+      p_title: values.title,
+      p_start_at: `${values.date}T${values.startTime}:00+09:00`,
+      p_end_at: `${values.date}T${values.endTime}:00+09:00`,
+      p_address: values.address.trim() || null,
+      p_customer_phone: values.customerPhone.trim() || null,
+      p_estimated_price: estimatedPrice,
+      p_additional_info: values.additionalInfo.trim() || null,
+      p_participant_member_ids: [...new Set(values.participantMemberIds)],
     }));
 
-    if (values.scheduleId) {
-      const { error } = await supabase.from('schedule_participants').delete().eq('schedule_id', scheduleId);
-
-      if (error) {
-        throw error;
-      }
-    }
-
-    if (participantRows.length > 0) {
-      const { error } = await supabase.from('schedule_participants').insert(supabasePayload(participantRows));
-
-      if (error) {
-        throw error;
-      }
-    }
+    if (error) throw error;
+    const scheduleId = String(data);
+    if (!scheduleId) throw new Error('일정 저장 결과를 확인하지 못했습니다.');
 
     return { ok: true, data: { scheduleId } };
   } catch (error) {
@@ -155,7 +113,7 @@ export async function saveScheduleAction(values: {
 export async function deleteScheduleAction(schedule: Pick<Schedule, 'id' | 'roomId'>): Promise<ActionResult> {
   try {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from('schedules').delete().eq('id', schedule.id);
+    const { error } = await supabase.rpc('delete_room_schedule', supabaseArgs({ p_schedule_id: schedule.id }));
 
     if (error) {
       throw error;
@@ -207,10 +165,10 @@ export async function updateScheduleStatusAction(schedule: Pick<Schedule, 'id' |
 }): Promise<ActionResult> {
   try {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from('schedules')
-      .update(supabasePayload({ status: schedule.status }))
-      .eq('id', schedule.id);
+    const { error } = await supabase.rpc('update_room_schedule_status', supabaseArgs({
+      p_schedule_id: schedule.id,
+      p_status: schedule.status,
+    }));
 
     if (error) {
       throw error;
@@ -375,7 +333,10 @@ export async function kickMemberAction(values: {
 }): Promise<ActionResult> {
   try {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.from('room_members').delete().eq('id', values.memberId).eq('room_id', values.roomId);
+    const { error } = await supabase.rpc('kick_room_member', supabaseArgs({
+      p_room_id: values.roomId,
+      p_member_id: values.memberId,
+    }));
 
     if (error) {
       throw error;

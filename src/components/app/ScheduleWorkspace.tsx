@@ -45,6 +45,13 @@ import {
 import type { ScheduleWorkspaceInitialData } from '@/data/schedule-supabase';
 import type { ScheduleWorkspacePage } from '@/data/schedule-workspace-query';
 import type { PreliminaryTask, Profile, RoomMember, Schedule, SchedulingRoom, UserPreference } from '@/domain/entities';
+import {
+  canAssignScheduleOwner,
+  canCreateSchedule,
+  canDeleteSchedule,
+  canEditSchedule,
+  canManageMembership,
+} from '@/domain/authorization/schedule-permissions';
 import { AppFrame } from '@/components/app/AppFrame';
 import { AppHeader } from '@/components/app/AppHeader';
 import { PreliminaryTaskCard } from '@/components/app/PreliminaryTaskCard';
@@ -93,6 +100,7 @@ interface ScheduleWorkspaceProps {
 
 type ScheduleFormValues = {
   title: string;
+  ownerMemberId: string;
   participantMemberIds: string[];
   date: string;
   startTime: string;
@@ -175,10 +183,6 @@ function mergeRooms(savedRooms: SchedulingRoom[], baseRooms: SchedulingRoom[]) {
   }
 
   return Array.from(merged.values());
-}
-
-function roleCanManageSchedules(member?: RoomMember) {
-  return member?.role === 'owner' || member?.role === 'manager';
 }
 
 function getMyMember(room: SchedulingRoom, profile: Profile) {
@@ -411,7 +415,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     const targetRoom = task.roomId ? rooms.find((room) => room.id === task.roomId) : rooms[0];
     const member = targetRoom ? getMyMember(targetRoom, workspaceProfile) : undefined;
 
-    if (!roleCanManageSchedules(member)) {
+    if (!canCreateSchedule(member?.role)) {
       setActiveSheet('roomInfo');
       return;
     }
@@ -472,7 +476,29 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   const addDemoSchedule = async (values: ScheduleFormValues) => {
     const targetRoom = formRoom;
     const member = getMyMember(targetRoom, workspaceProfile) ?? targetRoom.members[0];
-    const participantMemberIds = [...new Set(values.participantMemberIds.length > 0 ? values.participantMemberIds : [member.id])];
+    const ownerMember = targetRoom.members.find((candidate) => candidate.id === values.ownerMemberId) ?? member;
+
+    if (!member || !ownerMember || !canCreateSchedule(member.role)) {
+      window.alert('이 방에서는 일정을 추가할 수 없습니다.');
+      return;
+    }
+
+    if (selectedSchedule) {
+      if (!canEditSchedule(member.id, selectedSchedule.ownerMemberId)) {
+        window.alert('일정 소유자만 수정할 수 있습니다.');
+        return;
+      }
+    } else if (!canAssignScheduleOwner(member.role, member.id, ownerMember.id, ownerMember.role)) {
+      window.alert('선택한 구성원에게 일정을 추가할 권한이 없습니다.');
+      return;
+    }
+
+    const ownerMemberId = selectedSchedule?.ownerMemberId ?? ownerMember.id;
+    const ownerName = selectedSchedule?.ownerName ?? ownerMember.nickname;
+    const participantMemberIds = [...new Set([
+      ...(values.participantMemberIds.length > 0 ? values.participantMemberIds : [ownerMemberId]),
+      ownerMemberId,
+    ])];
     const title = values.title.trim() || selectedTask?.title || '새 일정';
     const date = values.date || '2026-07-02';
     const startTime = values.startTime || '14:30';
@@ -490,7 +516,10 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       estimatedPrice,
       additionalInfo: values.additionalInfo.trim() || null,
       status: 'scheduled',
-      createdByMemberId: member.id,
+      ownerMemberId,
+      ownerName,
+      createdByMemberId: selectedSchedule?.createdByMemberId ?? member.id,
+      createdByName: selectedSchedule?.createdByName ?? member.nickname,
       updatedAt: new Date().toISOString(),
       participantMemberIds,
       isChecked: false,
@@ -500,6 +529,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       const result = await saveScheduleAction({
         scheduleId: selectedSchedule?.id,
         roomId: targetRoom.id,
+        ownerMemberId,
         title,
         participantMemberIds,
         date,
@@ -616,6 +646,15 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
 
   const deleteSelectedSchedule = async () => {
     if (selectedSchedule) {
+      const targetRoom = rooms.find((room) => room.id === selectedSchedule.roomId);
+      const actor = targetRoom ? getMyMember(targetRoom, workspaceProfile) : undefined;
+      const owner = targetRoom?.members.find((member) => member.id === selectedSchedule.ownerMemberId);
+
+      if (!canDeleteSchedule(actor?.role, actor?.id ?? '', selectedSchedule.ownerMemberId, owner?.role)) {
+        window.alert('이 일정을 삭제할 권한이 없습니다.');
+        return;
+      }
+
       if (usesSupabaseData) {
         const result = await deleteScheduleAction(selectedSchedule);
 
@@ -691,6 +730,15 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       return;
     }
 
+    const targetRoom = rooms.find((room) => room.id === schedule.roomId);
+    const actor = targetRoom ? getMyMember(targetRoom, workspaceProfile) : undefined;
+    const owner = targetRoom?.members.find((member) => member.id === schedule.ownerMemberId);
+
+    if (!canDeleteSchedule(actor?.role, actor?.id ?? '', schedule.ownerMemberId, owner?.role)) {
+      window.alert('이 일정을 삭제할 권한이 없습니다.');
+      return;
+    }
+
     if (usesSupabaseData) {
       const result = await deleteScheduleAction(schedule);
 
@@ -725,6 +773,14 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     const schedule = schedules.find((candidate) => candidate.id === scheduleId);
 
     if (!schedule) {
+      return;
+    }
+
+    const targetRoom = rooms.find((room) => room.id === schedule.roomId);
+    const actor = targetRoom ? getMyMember(targetRoom, workspaceProfile) : undefined;
+
+    if (!canEditSchedule(actor?.id ?? '', schedule.ownerMemberId)) {
+      window.alert('일정 소유자만 상태를 변경할 수 있습니다.');
       return;
     }
 
@@ -768,6 +824,14 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   };
 
   const kickMember = async (targetRoomId: string, memberId: string) => {
+    const targetRoom = rooms.find((room) => room.id === targetRoomId);
+    const roomOwner = targetRoom?.members.find((member) => member.role === 'owner');
+
+    if (!roomOwner) {
+      window.alert('방장을 찾을 수 없어 구성원을 내보낼 수 없습니다.');
+      return;
+    }
+
     if (usesSupabaseData) {
       const result = await kickMemberAction({ roomId: targetRoomId, memberId });
 
@@ -787,7 +851,16 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
     setSchedules((previous) =>
       previous.map((schedule) =>
         schedule.roomId === targetRoomId
-          ? { ...schedule, participantMemberIds: schedule.participantMemberIds.filter((id) => id !== memberId) }
+          ? schedule.ownerMemberId === memberId
+            ? {
+                ...schedule,
+                ownerMemberId: roomOwner.id,
+                participantMemberIds: [...new Set([
+                  ...schedule.participantMemberIds.filter((id) => id !== memberId),
+                  roomOwner.id,
+                ])],
+              }
+            : { ...schedule, participantMemberIds: schedule.participantMemberIds.filter((id) => id !== memberId) }
           : schedule,
       ),
     );
@@ -1065,6 +1138,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       <ParticipantManagementSheet
         open={activeSheet === 'participantManagement'}
         room={activeRoom}
+        profile={workspaceProfile}
         onClose={() => setActiveSheet(null)}
         onTransfer={() => setActiveSheet('transferOwnership')}
         onRoleChange={(memberId, role) => changeMemberRole(activeRoom.id, memberId, role)}
@@ -1084,6 +1158,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       <RoomScheduleManagementSheet
         open={activeSheet === 'roomScheduleManagement'}
         room={activeRoom}
+        profile={workspaceProfile}
         schedules={visibleRoomSchedules}
         onClose={() => setActiveSheet(null)}
         onOpenSchedule={openScheduleDetail}
@@ -1973,12 +2048,13 @@ function RoomMenuSheet({
   const owner = room.members.find((member) => member.role === 'owner');
   const isOwner = myMember?.role === 'owner';
   const isManager = myMember?.role === 'manager';
+  const managesMembership = canManageMembership(myMember?.role);
 
   const items = [
-    ...(isOwner || isManager ? [{ label: '새 일정 추가', icon: CalendarPlus, onClick: onScheduleAdd }] : []),
+    ...(canCreateSchedule(myMember?.role) ? [{ label: '새 일정 추가', icon: CalendarPlus, onClick: onScheduleAdd }] : []),
     { label: '참여자 목록', icon: UsersRound, onClick: onParticipants },
-    ...(isOwner ? [{ label: '참여자 및 권한 관리', icon: Shield, onClick: onParticipants }] : []),
-    ...(isOwner ? [{ label: '방 일정 관리', icon: CalendarPlus, onClick: onManagement }] : []),
+    ...(managesMembership ? [{ label: '참여자 및 권한 관리', icon: Shield, onClick: onParticipants }] : []),
+    ...(isOwner || isManager ? [{ label: '방 일정 관리', icon: CalendarPlus, onClick: onManagement }] : []),
     ...(isOwner ? [{ label: '방장 위임', icon: Crown, onClick: onTransfer }] : []),
     ...(isOwner ? [{ label: '방 설정', icon: Settings, onClick: onInfo }] : []),
     ...(isOwner || isManager ? [{ label: '초대 링크 관리', icon: KeyRound, onClick: onInvite }] : []),
@@ -2041,6 +2117,12 @@ function ScheduleFormSheet({
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const currentMember = getMyMember(room, currentUser) ?? room.members[0];
+  const selectedOwnerMemberId = schedule?.ownerMemberId ?? currentMember?.id ?? '';
+  const assignableOwners = room.members.filter((member) =>
+    canAssignScheduleOwner(currentMember?.role, currentMember?.id ?? '', member.id, member.role),
+  );
+  const canChooseOwner = !schedule && (currentMember?.role === 'owner' || currentMember?.role === 'manager');
+  const canChooseParticipants = currentMember?.role === 'owner' || currentMember?.role === 'manager';
   const defaultDate = schedule ? format(new Date(schedule.startAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   const defaultStartTime = schedule ? format(new Date(schedule.startAt), 'HH:mm') : '14:30';
   const defaultEndTime = schedule ? format(new Date(schedule.endAt), 'HH:mm') : '16:30';
@@ -2116,9 +2198,14 @@ function ScheduleFormSheet({
     }
 
     const formData = new FormData(event.currentTarget);
+    const ownerMemberId = String(formData.get('ownerMemberId') ?? selectedOwnerMemberId);
+    const submittedParticipantIds = formData.getAll('participantMemberIds').map(String);
     const values: ScheduleFormValues = {
       title: String(formData.get('title') ?? ''),
-      participantMemberIds: formData.getAll('participantMemberIds').map(String),
+      ownerMemberId,
+      participantMemberIds: canChooseParticipants
+        ? [...new Set([...submittedParticipantIds, ownerMemberId])]
+        : [currentMember?.id ?? ownerMemberId],
       date: String(formData.get('date') ?? ''),
       startTime: String(formData.get('startTime') ?? ''),
       endTime: String(formData.get('endTime') ?? ''),
@@ -2193,21 +2280,53 @@ function ScheduleFormSheet({
           </div>
         ) : null}
         <Field label="일정 이름" name="title" defaultValue={schedule?.title ?? task?.title ?? ''} placeholder="에어컨 청소" required />
+        {canChooseOwner ? (
+          <label className="block">
+            <span className="mb-2 block text-xs font-semibold text-gray-700">일정 소유자</span>
+            <select
+              name="ownerMemberId"
+              defaultValue={selectedOwnerMemberId}
+              className="h-11 w-full rounded-xl border border-app-border bg-white px-3 text-sm outline-none focus:border-app-blue focus:ring-4 focus:ring-blue-100"
+              required
+            >
+              {assignableOwners.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.nickname} · {roomRoleLabels[member.role]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <>
+            <input type="hidden" name="ownerMemberId" value={selectedOwnerMemberId} />
+            <상세
+              label="일정 소유자"
+              value={schedule?.ownerName ?? currentMember?.nickname ?? '-'}
+            />
+          </>
+        )}
         <div>
           <p className="mb-2 text-xs font-semibold text-gray-700">참여자</p>
-          <div className="flex flex-wrap gap-2">
-            {room.members.map((member, index) => (
-              <label key={member.id} className="flex min-h-11 items-center gap-2 rounded-full border border-app-border px-3 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  name="participantMemberIds"
-                  value={member.id}
-                  defaultChecked={schedule ? schedule.participantMemberIds.includes(member.id) : member.id === currentMember?.id || index === 0}
-                />
-                {member.nickname}
-              </label>
-            ))}
-          </div>
+          {canChooseParticipants ? (
+            <div className="flex flex-wrap gap-2">
+              {room.members.map((member, index) => (
+                <label key={member.id} className="flex min-h-11 items-center gap-2 rounded-full border border-app-border px-3 text-sm font-bold">
+                  <input
+                    type="checkbox"
+                    name="participantMemberIds"
+                    value={member.id}
+                    defaultChecked={schedule ? schedule.participantMemberIds.includes(member.id) : member.id === currentMember?.id || index === 0}
+                  />
+                  {member.nickname}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-app-border bg-gray-50 p-3 text-sm font-semibold text-gray-700">
+              {currentMember?.nickname ?? '-'} (본인)
+              <input type="hidden" name="participantMemberIds" value={currentMember?.id ?? ''} />
+            </div>
+          )}
         </div>
         <Field label="날짜" name="date" type="date" defaultValue={defaultDate} required />
         <div className="grid grid-cols-2 gap-3">
@@ -2246,8 +2365,9 @@ function ScheduleDetailSheet({
 
   const participants = getScheduleParticipants(room, schedule);
   const myMember = getMyMember(room, profile);
-  const canManage = roleCanManageSchedules(myMember);
-  const creator = room.members.find((member) => member.id === schedule.createdByMemberId);
+  const ownerMember = room.members.find((member) => member.id === schedule.ownerMemberId);
+  const canEdit = canEditSchedule(myMember?.id ?? '', schedule.ownerMemberId);
+  const canDelete = canDeleteSchedule(myMember?.role, myMember?.id ?? '', schedule.ownerMemberId, ownerMember?.role);
   const phoneNumber = sanitizePhoneNumber(schedule.customerPhone);
   const navigationUrls = schedule.address ? buildNavigationUrls(schedule.address) : null;
   const googleCalendarUrl = buildGoogleCalendarUrl(schedule);
@@ -2310,7 +2430,8 @@ function ScheduleDetailSheet({
         />
         <상세 label="예상 비용" value={formatCurrency(schedule.estimatedPrice)} />
         <상세 label="추가 정보" value={schedule.additionalInfo ?? '-'} />
-        <상세 label="등록자" value={creator?.nickname ?? '-'} />
+        <상세 label="일정 소유자" value={schedule.ownerName} />
+        <상세 label="등록자" value={schedule.createdByName} />
         <상세 label="마지막 수정" value={format(new Date(schedule.updatedAt), 'yyyy-MM-dd HH:mm')} />
         <a
           className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-app-border bg-white px-4 text-sm font-semibold text-gray-900 hover:bg-gray-50"
@@ -2321,10 +2442,10 @@ function ScheduleDetailSheet({
           <CalendarPlus className="h-4 w-4" />
           구글 캘린더에 추가
         </a>
-        {canManage ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Button type="button" variant="outline" onClick={onEdit}>수정</Button>
-            <Button type="button" variant="danger" onClick={onDelete}>삭제</Button>
+        {canEdit || canDelete ? (
+          <div className={cn('grid gap-3', canEdit && canDelete ? 'grid-cols-2' : 'grid-cols-1')}>
+            {canEdit ? <Button type="button" variant="outline" onClick={onEdit}>수정</Button> : null}
+            {canDelete ? <Button type="button" variant="danger" onClick={onDelete}>삭제</Button> : null}
           </div>
         ) : (
           <Button type="button" variant="outline" className="w-full" onClick={onClose}>닫기</Button>
@@ -2347,6 +2468,7 @@ function 상세({ label, value, action }: { label: string; value: string; action
 function ParticipantManagementSheet({
   open,
   room,
+  profile,
   onClose,
   onTransfer,
   onRoleChange,
@@ -2354,13 +2476,17 @@ function ParticipantManagementSheet({
 }: {
   open: boolean;
   room: SchedulingRoom;
+  profile: Profile;
   onClose: () => void;
   onTransfer: () => void;
   onRoleChange: (memberId: string, role: RoomMember['role']) => void;
   onKick: (memberId: string) => void;
 }) {
+  const currentMember = getMyMember(room, profile);
+  const managesMembership = canManageMembership(currentMember?.role);
+
   return (
-    <Sheet open={open} title="참여자 및 권한 관리" onClose={onClose}>
+    <Sheet open={open} title={managesMembership ? '참여자 및 권한 관리' : '참여자 목록'} onClose={onClose}>
       <div className="space-y-3">
         {room.members.map((member) => (
           <Card key={member.id}>
@@ -2375,7 +2501,7 @@ function ParticipantManagementSheet({
                 <p className="mt-1 text-xs text-gray-400">참여일 {format(new Date(member.joinedAt), 'yyyy-MM-dd')}</p>
               </div>
             </div>
-            {member.role !== 'owner' ? (
+            {managesMembership && member.role !== 'owner' ? (
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <Button
                   type="button"
@@ -2462,6 +2588,7 @@ function TransferOwnershipSheet({
 function RoomScheduleManagementSheet({
   open,
   room,
+  profile,
   schedules,
   onClose,
   onOpenSchedule,
@@ -2471,6 +2598,7 @@ function RoomScheduleManagementSheet({
 }: {
   open: boolean;
   room: SchedulingRoom;
+  profile: Profile;
   schedules: Schedule[];
   onClose: () => void;
   onOpenSchedule: (schedule: Schedule) => void;
@@ -2479,6 +2607,7 @@ function RoomScheduleManagementSheet({
   onStatusChange: (scheduleId: string, status: Schedule['status']) => void;
 }) {
   const completed = schedules.filter((schedule) => schedule.status === 'completed').length;
+  const currentMember = getMyMember(room, profile);
 
   return (
     <Sheet open={open} title="방 일정 관리" description="현재 방의 일정만 표시됩니다." onClose={onClose}>
@@ -2489,7 +2618,17 @@ function RoomScheduleManagementSheet({
         </div>
         <Field label="검색" placeholder="일정 검색" />
         <div className="space-y-3">
-          {schedules.map((schedule) => (
+          {schedules.map((schedule) => {
+            const ownerMember = room.members.find((member) => member.id === schedule.ownerMemberId);
+            const canEdit = canEditSchedule(currentMember?.id ?? '', schedule.ownerMemberId);
+            const canDelete = canDeleteSchedule(
+              currentMember?.role,
+              currentMember?.id ?? '',
+              schedule.ownerMemberId,
+              ownerMember?.role,
+            );
+
+            return (
             <Card key={schedule.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -2503,19 +2642,26 @@ function RoomScheduleManagementSheet({
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => onOpenSchedule(schedule)}>상세</Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => onEditSchedule(schedule)}>수정</Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onStatusChange(schedule.id, schedule.status === 'completed' ? 'scheduled' : 'completed')}
-                >
-                  {schedule.status === 'completed' ? '예정으로 변경' : '완료 처리'}
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => onDeleteSchedule(schedule.id)}>삭제</Button>
+                {canEdit ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => onEditSchedule(schedule)}>수정</Button>
+                ) : null}
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onStatusChange(schedule.id, schedule.status === 'completed' ? 'scheduled' : 'completed')}
+                  >
+                    {schedule.status === 'completed' ? '예정으로 변경' : '완료 처리'}
+                  </Button>
+                ) : null}
+                {canDelete ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => onDeleteSchedule(schedule.id)}>삭제</Button>
+                ) : null}
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       </div>
     </Sheet>

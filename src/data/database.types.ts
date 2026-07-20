@@ -250,7 +250,10 @@ export interface Database {
           estimated_price: number | null;
           additional_info: string | null;
           status: ScheduleStatus;
-          created_by_member_id: string;
+          owner_member_id: string;
+          owner_name_snapshot: string;
+          created_by_member_id: string | null;
+          created_by_name_snapshot: string;
           created_at: string;
           updated_at: string;
         };
@@ -265,7 +268,10 @@ export interface Database {
           estimated_price?: number | null;
           additional_info?: string | null;
           status?: ScheduleStatus;
-          created_by_member_id: string;
+          owner_member_id: string;
+          owner_name_snapshot: string;
+          created_by_member_id?: string | null;
+          created_by_name_snapshot: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -278,7 +284,10 @@ export interface Database {
           estimated_price?: number | null;
           additional_info?: string | null;
           status?: ScheduleStatus;
-          created_by_member_id?: string;
+          owner_member_id?: string;
+          owner_name_snapshot?: string;
+          created_by_member_id?: string | null;
+          created_by_name_snapshot?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -409,7 +418,7 @@ export interface Database {
       }>;
       invitation_attempts: GeneratedTable<{
         id: string; invite_id: string | null; actor_user_id: string | null;
-        ip_key: string; event_type: 'preview' | 'validate' | 'redeem' | 'deny';
+        ip_key: string; event_type: 'preview' | 'validate' | 'redeem' | 'create' | 'revoke' | 'replace' | 'deny';
         result_code: string; request_id: string; occurred_at: string;
       }>;
       support_inquiries: GeneratedTable<{
@@ -528,6 +537,17 @@ export interface Database {
         };
         Returns: boolean;
       };
+      save_room_schedule: {
+        Args: {
+          p_schedule_id: string | null; p_room_id: string; p_owner_member_id: string; p_title: string;
+          p_start_at: string; p_end_at: string; p_address: string | null; p_customer_phone: string | null;
+          p_estimated_price: number | null; p_additional_info: string | null; p_participant_member_ids: string[];
+        };
+        Returns: string;
+      };
+      delete_room_schedule: { Args: { p_schedule_id: string }; Returns: boolean };
+      update_room_schedule_status: { Args: { p_schedule_id: string; p_status: ScheduleStatus }; Returns: boolean };
+      kick_room_member: { Args: { p_room_id: string; p_member_id: string }; Returns: boolean };
       has_service_capability: { Args: { p_capability: string }; Returns: boolean };
       is_active_account: { Args: { p_user_id?: string }; Returns: boolean };
       record_verified_authentication: { Args: { p_actor_user_id: string; p_request_id: string }; Returns: undefined };
