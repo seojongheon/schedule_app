@@ -7,6 +7,7 @@ const loaderUrl = new URL('./schedule-supabase.ts', import.meta.url);
 const actionsUrl = new URL('../app/actions/schedule-actions.ts', import.meta.url);
 const entitiesUrl = new URL('../domain/entities.ts', import.meta.url);
 const databaseTypesUrl = new URL('./database.types.ts', import.meta.url);
+const workspaceUrl = new URL('../components/app/ScheduleWorkspace.tsx', import.meta.url);
 
 test('schedule ownership migration adds explicit ownership and atomic mutation RPCs', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -64,4 +65,18 @@ test('schedule and kick actions delegate atomic work to ownership RPCs', async (
   assert.match(actions, /rpc\('kick_room_member'/);
   assert.doesNotMatch(actions, /from\('schedule_participants'\)\.delete/);
   assert.doesNotMatch(actions, /from\('room_members'\)\.delete/);
+});
+
+test('workspace applies role-aware ownership controls and preserves kicked owner display names', async () => {
+  const workspace = await readFile(workspaceUrl, 'utf8');
+
+  assert.match(workspace, /canCreateSchedule/);
+  assert.match(workspace, /canAssignScheduleOwner/);
+  assert.match(workspace, /canEditSchedule/);
+  assert.match(workspace, /canDeleteSchedule/);
+  assert.match(workspace, /canManageMembership/);
+  assert.match(workspace, /name="ownerMemberId"/);
+  assert.match(workspace, /schedule\.ownerName/);
+  assert.match(workspace, /ownerMemberId:\s*roomOwner\.id/);
+  assert.doesNotMatch(workspace, /function roleCanManageSchedules/);
 });

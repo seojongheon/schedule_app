@@ -304,6 +304,7 @@ set search_path = public
 as $$
 begin
   if auth.uid() is null
+     or not public.is_active_account(auth.uid())
      or p_status not in ('scheduled', 'completed', 'cancelled')
      or not exists (
        select 1
