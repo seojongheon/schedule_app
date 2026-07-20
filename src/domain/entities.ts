@@ -54,7 +54,10 @@ export interface Schedule {
   estimatedPrice: number | null;
   additionalInfo: string | null;
   status: ScheduleStatus;
-  createdByMemberId: string;
+  ownerMemberId: string;
+  ownerName: string;
+  createdByMemberId: string | null;
+  createdByName: string;
   updatedAt: string;
   participantMemberIds: string[];
   isChecked?: boolean;

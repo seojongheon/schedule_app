@@ -472,6 +472,8 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
   const addDemoSchedule = async (values: ScheduleFormValues) => {
     const targetRoom = formRoom;
     const member = getMyMember(targetRoom, workspaceProfile) ?? targetRoom.members[0];
+    const ownerMemberId = selectedSchedule?.ownerMemberId ?? member.id;
+    const ownerName = selectedSchedule?.ownerName ?? member.nickname;
     const participantMemberIds = [...new Set(values.participantMemberIds.length > 0 ? values.participantMemberIds : [member.id])];
     const title = values.title.trim() || selectedTask?.title || '새 일정';
     const date = values.date || '2026-07-02';
@@ -490,7 +492,10 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       estimatedPrice,
       additionalInfo: values.additionalInfo.trim() || null,
       status: 'scheduled',
-      createdByMemberId: member.id,
+      ownerMemberId,
+      ownerName,
+      createdByMemberId: selectedSchedule?.createdByMemberId ?? member.id,
+      createdByName: selectedSchedule?.createdByName ?? member.nickname,
       updatedAt: new Date().toISOString(),
       participantMemberIds,
       isChecked: false,
@@ -500,6 +505,7 @@ export function ScheduleWorkspace({ page, roomId, profile = currentUser, initial
       const result = await saveScheduleAction({
         scheduleId: selectedSchedule?.id,
         roomId: targetRoom.id,
+        ownerMemberId,
         title,
         participantMemberIds,
         date,
