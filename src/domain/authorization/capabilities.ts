@@ -22,7 +22,6 @@ const ROOM_CAPABILITY_MATRIX: Record<RoomRole, readonly RoomCapability[]> = {
     "schedule.edit_own",
     "schedule.edit_any",
     "invite.create",
-    "member.manage",
   ],
   member: ["room.read", "schedule.create", "schedule.edit_own"],
   viewer: ["room.read"],
